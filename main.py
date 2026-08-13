@@ -1,13 +1,80 @@
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 import json
 import random
 import time
+import os
+from typing import List
 
 app = FastAPI()
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
+
+# 目录配置：预设（只读） vs 自定义（可写）
+PRESET_DIR = "data/presets"
+CUSTOM_DIR = "data/custom"
+os.makedirs(PRESET_DIR, exist_ok=True)
+os.makedirs(CUSTOM_DIR, exist_ok=True)
+
+class LibrarySchema(BaseModel):
+    name: str
+    characters: List[str]
+
+# --- 辅助函数：检查是否属于官方预设库 ---
+def is_preset(name: str) -> bool:
+    return os.path.exists(os.path.join(PRESET_DIR, f"{name}.json"))
+
+@app.get("/api/libraries")
+async def get_libraries():
+    """获取所有可用词库列表（合并预设与自定义目录）"""
+    libs = set()
+    # 读取官方预设
+    for f in os.listdir(PRESET_DIR):
+        if f.endswith(".json"): libs.add(f[:-5])
+    # 读取用户自定义
+    for f in os.listdir(CUSTOM_DIR):
+        if f.endswith(".json"): libs.add(f[:-5])
+    return {"libraries": list(libs)}
+
+@app.get("/api/libraries/{name}")
+async def get_library(name: str):
+    """获取指定词库详情（优先读取预设库）"""
+    safe_name = os.path.basename(name)
+    
+    # 1. 先查预设库
+    preset_path = os.path.join(PRESET_DIR, f"{safe_name}.json")
+    if os.path.exists(preset_path):
+        with open(preset_path, "r", encoding="utf-8") as f:
+            return {"name": safe_name, "characters": json.load(f), "protected": True}
+    
+    # 2. 后查自定义库
+    custom_path = os.path.join(CUSTOM_DIR, f"{safe_name}.json")
+    if os.path.exists(custom_path):
+        with open(custom_path, "r", encoding="utf-8") as f:
+            return {"name": safe_name, "characters": json.load(f), "protected": False}
+            
+    raise HTTPException(status_code=404, detail="词库不存在")
+
+@app.post("/api/libraries")
+async def save_library(lib: LibrarySchema):
+    """新建或保存自定义词库（严禁覆盖预设库）"""
+    safe_name = os.path.basename(lib.name)
+    
+    # 1. 拦截对官方预设库的修改企图
+    if is_preset(safe_name):
+        raise HTTPException(status_code=403, detail="官方预设词库不可修改，如需调整请另存为新名称")
+    
+    if not lib.characters:
+        raise HTTPException(status_code=400, detail="词库内容不能为空")
+    
+    # 2. 统一写入自定义目录
+    path = os.path.join(CUSTOM_DIR, f"{safe_name}.json")
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump([c.strip() for c in lib.characters if c.strip()], f, ensure_ascii=False)
+        
+    return {"status": "success"}
 
 @app.get("/")
 async def get_index():
@@ -16,35 +83,19 @@ async def get_index():
 # --- 游戏与房间管理逻辑 ---
 rooms = {}
 connections = {}
-HISTORICAL_FIGURES = historical_figures = [
-    "孔子", "老子", "庄子", "孟子", "荀子", "墨子", "韩非", "孙武", "屈原", "商鞅", 
-    "扁鹊", "吕不韦", "邹衍", "管仲", "晏子", "秦始皇", "刘邦", "项羽", "张良", "韩信", 
-    "萧何", "汉武帝", "卫青", "霍去病", "张骞", "司马迁", "班超", "蔡伦", "张衡", "华佗", 
-    "董仲舒", "王昭君", "曹操", "诸葛亮", "关羽", "刘备", "孙权", "周瑜", "司马懿", "陶渊明", 
-    "王羲之", "祖逖", "祖冲之", "花木兰", "北魏孝文帝", "郦道元", "贾思勰", "谢安", "隋文帝", "唐太宗", 
-    "武则天", "李白", "杜甫", "王维", "白居易", "韩愈", "柳宗元", "玄奘", "鉴真", "狄仁杰", 
-    "魏征", "郭子仪", "颜真卿", "李商隐", "温庭筠", "文成公主", "僧一行", "宋太祖", "王安石", "苏轼", 
-    "辛弃疾", "李清照", "岳飞", "文天祥", "司马光", "沈括", "毕昇", "朱熹", "成吉思汗", "忽必烈", 
-    "关汉卿", "郭守敬", "耶律阿保机", "欧阳修", "陆游", "朱元璋", "朱棣", "张居正", "王阳明", "郑和", 
-    "海瑞", "李时珍", "戚继光", "顾炎武", "康熙帝", "雍正帝", "乾隆帝", "曹雪芹", "纪晓岚", "纳兰性德"
-]
-ROOM_TIMEOUT = 600  # 房间无操作超时时间：10分钟 (600秒)
+ROOM_TIMEOUT = 600
 
 def cleanup_inactive_rooms():
-    """自动清理超时未活动的僵尸房间"""
     now = time.time()
     expired_rooms = [
         r_id for r_id, room in rooms.items() 
         if now - room.get("last_activity", now) > ROOM_TIMEOUT
     ]
     for r_id in expired_rooms:
-        if r_id in rooms:
-            del rooms[r_id]
-        if r_id in connections:
-            del connections[r_id]
+        if r_id in rooms: del rooms[r_id]
+        if r_id in connections: del connections[r_id]
 
 def touch_room(room_id: str):
-    """刷新房间的最后活跃时间"""
     if room_id in rooms:
         rooms[room_id]["last_activity"] = time.time()
 
@@ -52,7 +103,6 @@ def advance_turn(room):
     players = room["players"]
     if not players: return
     
-    # 所有玩家通关：重置房间回准备阶段，允许新玩家加入
     if all(p.get("finished", False) for p in players):
         room["started"] = False
         room["turn_index"] = 0
@@ -63,7 +113,7 @@ def advance_turn(room):
             p["finished"] = False
             p["last_guess_wrong"] = False
             p["target"] = ""
-        room["events"].append({"content": "🏆 游戏结束！所有玩家都已成功猜出自己的身份！房间已重置，等待新玩家加入或重新准备。"})
+        room["events"].append({"content": "🏆 游戏结束！所有玩家都已成功猜出自己的身份！房间已重置。"})
         return
     
     n = len(players)
@@ -97,21 +147,39 @@ async def broadcast(room_id: str):
             "turn_index": room.get("turn_index", 0),
             "current_question": room.get("current_question"),
             "question_history": room.get("question_history", []),
-            "events": room["events"]
+            "events": room["events"],
+            "library_name": room.get("library_name", "默认")
         }
         try: 
             await conn["ws"].send_text(json.dumps(payload, ensure_ascii=False))
         except: 
             pass
 
+# 通过 Query Parameter 接收传入的词库名
 @app.websocket("/ws/{room_id}/{name}")
-async def websocket_endpoint(websocket: WebSocket, room_id: str, name: str):
+async def websocket_endpoint(websocket: WebSocket, room_id: str, name: str, library: str = "默认历史人物"):
     await websocket.accept()
-    
-    # 每次有新连接时，顺便扫描并清理过期房间
     cleanup_inactive_rooms()
     
     if room_id not in rooms:
+        # 首个进入房间的玩家决定该房间的词库
+        safe_name = os.path.basename(library)
+        
+        # 1. 先在自定义目录 (CUSTOM_DIR) 中查找
+        lib_path = os.path.join(CUSTOM_DIR, f"{safe_name}.json")
+        
+        # 2. 如果自定义目录没有，再到预设目录 (PRESET_DIR) 中查找
+        if not os.path.exists(lib_path):
+            lib_path = os.path.join(PRESET_DIR, f"{safe_name}.json")
+            
+        # 3. 如果两边都找不到，直接抛出异常退出，拒绝默默降级
+        if not os.path.exists(lib_path):
+            raise HTTPException(status_code=404, detail=f"词库 '{safe_name}' 不存在")
+
+        # 读取词库内容
+        with open(lib_path, "r", encoding="utf-8") as f:
+            characters = json.load(f)
+
         rooms[room_id] = {
             "started": False, 
             "players": [], 
@@ -119,7 +187,9 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, name: str):
             "current_question": None, 
             "question_history": [], 
             "events": [],
-            "last_activity": time.time()
+            "last_activity": time.time(),
+            "library_name": library,
+            "characters": characters
         }
         connections[room_id] = []
     
@@ -141,14 +211,14 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, name: str):
         pid = "p_" + str(random.randint(1000, 9999))
         room["players"].append({"id": pid, "name": name, "target": "", "ready": False, "finished": False, "last_guess_wrong": False})
         connections[room_id].append({"ws": websocket, "id": pid, "name": name})
-        room["events"].append({"content": f"系统: {name} 加入房间"})
+        room["events"].append({"content": f"系统: {name} 加入房间 (词库: {room['library_name']})"})
     
     await broadcast(room_id)
 
     try:
         while True:
             msg = await websocket.receive_text()
-            touch_room(room_id)  # 收到任何消息都刷新活跃时间
+            touch_room(room_id)
             
             data = json.loads(msg)
             action = data.get("action")
@@ -168,7 +238,11 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, name: str):
                     room["turn_index"] = 0
                     room["current_question"] = None
                     room["question_history"] = []
-                    chars = random.sample(HISTORICAL_FIGURES, min(len(room["players"]), len(HISTORICAL_FIGURES)))
+                    
+                    # 从绑定的图库中随机抽取人物
+                    chars_pool = room["characters"]
+                    chars = random.sample(chars_pool, min(len(room["players"]), len(chars_pool)))
+                    
                     for i, p in enumerate(room["players"]): 
                         p["target"] = chars[i % len(chars)]
                         p["finished"] = False
@@ -240,7 +314,6 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, name: str):
             if disconnected_player:
                 rooms[room_id]["events"].append({"content": f"系统: {name} 离线"})
             
-            # 若未开始且连接全断，直接清理
             if not connections[room_id] and not room["started"]:
                 del connections[room_id]
                 del rooms[room_id]

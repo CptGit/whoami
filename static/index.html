@@ -14,40 +14,48 @@
             <div class="space-y-3">
                 <input id="room-id" class="w-full border border-gray-300 p-3 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="请输入房间号 (如 888)">
                 <input id="user-name" class="w-full border border-gray-300 p-3 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="请输入你的名字">
+                
+                <!-- 新增：词库选择与管理区域 -->
+                <div class="flex gap-2">
+                    <select id="library-select" class="flex-1 border border-gray-300 p-3 rounded-xl text-base bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <option value="默认历史人物">加载中...</option>
+                    </select>
+                    <button onclick="openLibraryManager()" class="bg-indigo-100 text-indigo-700 hover:bg-indigo-200 px-4 py-3 rounded-xl font-bold text-sm transition">管理词库</button>
+                </div>
+
                 <button onclick="connect()" class="w-full bg-blue-500 hover:bg-blue-600 text-white p-3 rounded-xl font-bold text-base transition shadow-md">进入房间</button>
+                <p class="text-xs text-gray-400 text-center mt-2">注: 房间图库由首个创建房间的玩家决定</p>
             </div>
         </div>
 
-        <!-- 游戏界面 -->
+        <!-- 游戏界面 (保持不变的主体结构) -->
         <div id="game-screen" class="hidden space-y-4">
             <div class="flex justify-between items-center border-b pb-2">
-                <h2 id="room-title" class="font-bold text-lg text-blue-600"></h2>
+                <div>
+                    <h2 id="room-title" class="font-bold text-lg text-blue-600 inline"></h2>
+                    <span id="room-lib-badge" class="ml-2 text-[10px] bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded-full align-middle"></span>
+                </div>
                 <span id="player-count" class="text-xs bg-gray-100 text-gray-600 px-2.5 py-1 rounded-full font-medium"></span>
             </div>
             
-            <!-- 我的专属角色卡片 -->
             <div id="target-card" class="bg-yellow-50 border border-yellow-300 p-3 rounded-xl text-center shadow-sm hidden">
                 <p class="text-xs text-gray-500 mb-0.5">你的身份分配：</p>
                 <span id="target-name" class="font-bold text-2xl text-yellow-800">???</span>
                 <p class="text-xs text-gray-400 mt-0.5">（所有人都能看到，只有你看不到）</p>
             </div>
 
-            <!-- 玩家看板 -->
             <div class="bg-gray-50 border rounded-xl p-3">
                 <h3 class="font-bold text-xs text-gray-500 mb-2 uppercase tracking-wider">房间玩家</h3>
                 <div id="players-list" class="grid grid-cols-2 gap-2 text-sm"></div>
             </div>
 
-            <!-- 准备区 -->
             <div id="pre-game-actions" class="space-y-3">
                 <button onclick="toggleReady()" id="ready-btn" class="w-full bg-yellow-500 hover:bg-yellow-600 text-white p-3 rounded-xl font-bold text-base transition shadow-md">点击准备 🟢</button>
                 <button onclick="startGame()" id="start-btn" class="w-full bg-green-500 hover:bg-green-600 text-white p-3 rounded-xl font-bold text-base transition shadow-md opacity-50 cursor-not-allowed" disabled>开始游戏 (需全员准备)</button>
             </div>
 
-            <!-- 游戏主交互区 -->
+            <!-- 以下游戏核心操作区保持原样 -->
             <div id="in-game-actions" class="space-y-3 hidden">
-                
-                <!-- 当前提问/回答/猜测 核心区域 -->
                 <div id="active-question-panel" class="bg-blue-50 border-2 border-blue-400 p-3.5 rounded-xl space-y-2 shadow-sm hidden">
                     <div class="flex justify-between items-center border-b border-blue-200 pb-1.5">
                         <span id="aq-asker" class="font-bold text-blue-900 text-sm"></span>
@@ -55,13 +63,11 @@
                     </div>
                     <div id="aq-text" class="text-gray-900 font-bold text-base bg-white p-2.5 rounded-lg border border-blue-100"></div>
                     
-                    <!-- 回答进度情况 -->
                     <div class="space-y-1 pt-1">
                         <p class="text-xs text-gray-500 font-semibold">各玩家回答进度：</p>
                         <div id="aq-answers-list" class="grid grid-cols-2 gap-1.5 text-xs"></div>
                     </div>
 
-                    <!-- 回答操作按钮 -->
                     <div id="answer-action-area" class="pt-2 border-t border-blue-200 hidden">
                         <p id="answer-tip" class="text-xs font-bold mb-1.5 text-indigo-700">请对该提问做出回答：</p>
                         <div class="flex gap-2">
@@ -70,7 +76,6 @@
                         </div>
                     </div>
 
-                    <!-- 猜测操作按钮 -->
                     <div id="guess-action-area" class="pt-2 border-t border-purple-200 hidden space-y-2">
                         <p class="text-xs text-purple-700 font-bold">所有回答完毕，请输入猜测或直接跳过：</p>
                         <div class="flex gap-2">
@@ -81,7 +86,6 @@
                     </div>
                 </div>
 
-                <!-- 发起提问区域 -->
                 <div id="ask-action-area" class="space-y-1.5 hidden">
                     <p id="ask-tip" class="text-xs font-bold text-gray-500"></p>
                     <div class="flex gap-2">
@@ -90,26 +94,52 @@
                     </div>
                 </div>
 
-                <!-- 轮到他人提问 / 状态提示框 -->
                 <div id="waiting-turn-tip" class="text-center p-3 bg-gray-50 rounded-xl border text-gray-600 text-sm hidden"></div>
 
-                <!-- 我的历史提问与回答复盘面板 -->
                 <div id="my-history-container" class="bg-purple-50 border-2 border-purple-300 rounded-xl p-3.5 space-y-2 shadow-sm">
                     <div class="flex justify-between items-center border-b border-purple-200 pb-1">
-                        <h3 class="font-bold text-sm text-purple-900 flex items-center gap-1">
-                            📋 我的历史提问与回答线索
-                        </h3>
+                        <h3 class="font-bold text-sm text-purple-900 flex items-center gap-1">📋 我的历史提问与回答线索</h3>
                         <span class="text-xs text-purple-600 font-medium">帮助推理身份</span>
                     </div>
                     <div id="my-history-list" class="space-y-2 max-h-48 overflow-y-auto text-xs"></div>
                 </div>
-
             </div>
 
-            <!-- 游戏日志 -->
             <div class="border-t pt-3">
                 <h3 class="font-bold text-xs text-gray-500 mb-1.5 uppercase tracking-wider">实时动态</h3>
                 <div id="events" class="space-y-1 max-h-28 overflow-y-auto bg-gray-50 p-2.5 rounded-xl border text-xs"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 词库管理 Modal 弹窗 -->
+    <div id="library-modal" class="hidden fixed inset-0 bg-black bg-opacity-60 z-50 flex justify-center items-center p-4">
+        <div class="bg-white rounded-2xl w-full max-w-md p-5 space-y-4">
+            <div class="flex justify-between items-center border-b pb-3">
+                <h2 class="text-lg font-bold text-gray-800">词库管理</h2>
+                <button onclick="closeLibraryManager()" class="text-gray-500 hover:text-gray-800 font-bold text-xl">&times;</button>
+            </div>
+            
+            <div class="space-y-3">
+                <div>
+                    <label class="text-xs font-bold text-gray-600 mb-1 block">编辑已有词库，或直接输入新名称新建：</label>
+                    <div class="flex gap-2">
+                        <select id="modal-lib-select" onchange="loadLibraryDetail()" class="border border-gray-300 p-2.5 rounded-lg text-sm flex-1 bg-gray-50">
+                            <option value="">-- 新建词库 --</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <div>
+                    <input id="lib-name" class="w-full border border-gray-300 p-2.5 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="词库名称 (如: 动漫角色)">
+                </div>
+
+                <div>
+                    <label class="text-xs text-gray-500 mb-1 block">人物列表 (用逗号或换行分隔):</label>
+                    <textarea id="lib-content" rows="6" class="w-full border border-gray-300 p-2.5 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono" placeholder="孙悟空, 鸣人, 哆啦A梦..."></textarea>
+                </div>
+
+                <button onclick="saveLibrary()" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white p-3 rounded-xl font-bold text-sm transition">保存词库</button>
             </div>
         </div>
     </div>
@@ -118,13 +148,91 @@
         let ws;
         let isReady = false;
 
+        // --- 词库相关逻辑 ---
+        async function fetchLibraries() {
+            try {
+                const res = await fetch('/api/libraries');
+                const data = await res.json();
+                const sel = document.getElementById('library-select');
+                const modalSel = document.getElementById('modal-lib-select');
+                
+                let optionsHtml = data.libraries.map(lib => `<option value="${lib}">${lib}</option>`).join('');
+                sel.innerHTML = optionsHtml;
+                modalSel.innerHTML = '<option value="">-- 新建独立词库 --</option>' + optionsHtml;
+            } catch (e) {
+                console.error('获取词库失败', e);
+            }
+        }
+
+        function openLibraryManager() {
+            document.getElementById('library-modal').classList.remove('hidden');
+            document.getElementById('lib-name').value = '';
+            document.getElementById('lib-content').value = '';
+            document.getElementById('modal-lib-select').value = '';
+        }
+
+        function closeLibraryManager() {
+            document.getElementById('library-modal').classList.add('hidden');
+        }
+
+        async function loadLibraryDetail() {
+            const name = document.getElementById('modal-lib-select').value;
+            if (!name) {
+                document.getElementById('lib-name').value = '';
+                document.getElementById('lib-content').value = '';
+                return;
+            }
+            const res = await fetch(`/api/libraries/${encodeURIComponent(name)}`);
+            const data = await res.json();
+            document.getElementById('lib-name').value = data.name;
+            document.getElementById('lib-content').value = data.characters.join('\n');
+        }
+
+        async function saveLibrary() {
+            const name = document.getElementById('lib-name').value.trim();
+            const content = document.getElementById('lib-content').value;
+            
+            if (!name || !content) return alert("名称和内容不能为空");
+            
+            // 将换行或逗号分割的文本转为数组
+            const chars = content.split(/[\n,，]+/).map(c => c.trim()).filter(c => c);
+            
+            if (chars.length < 2) return alert("至少需要输入2个角色");
+
+            try {
+                const res = await fetch('/api/libraries', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({name: name, characters: chars})
+                });
+                
+                if (res.ok) {
+                    alert("保存成功！");
+                    await fetchLibraries(); // 刷新列表
+                    document.getElementById('library-select').value = name; // 自动选中刚保存的
+                    closeLibraryManager();
+                } else {
+                    alert("保存失败");
+                }
+            } catch(e) {
+                alert("网络错误");
+            }
+        }
+
+        // 初始化加载词库列表
+        window.addEventListener('DOMContentLoaded', fetchLibraries);
+
+        // --- 原有游戏连接与操作逻辑 ---
         function connect() {
             const room = document.getElementById('room-id').value.trim();
             const name = document.getElementById('user-name').value.trim();
+            const library = document.getElementById('library-select').value;
+            
             if (!room || !name) return alert('请完整填写房间号和名字！');
             
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            ws = new WebSocket(`${protocol}//${window.location.host}/ws/${room}/${encodeURIComponent(name)}`);
+            // 附带 library query 参数
+            ws = new WebSocket(`${protocol}//${window.location.host}/ws/${room}/${encodeURIComponent(name)}?library=${encodeURIComponent(library)}`);
             
             ws.onmessage = (e) => {
                 const data = JSON.parse(e.data);
@@ -139,11 +247,16 @@
                     document.getElementById('login-screen').classList.add('hidden');
                     document.getElementById('game-screen').classList.remove('hidden');
                     document.getElementById('room-title').innerText = `房间号: ${room}`;
+                    
+                    // 显示当前房间绑定的图库
+                    if(data.library_name) {
+                        document.getElementById('room-lib-badge').innerText = `词库: ${data.library_name}`;
+                    }
+                    
                     document.getElementById('player-count').innerText = `在线: ${data.players.length}人`;
                     
                     const myId = data.players.find(x => x.isMe)?.id;
 
-                    // 1. 渲染玩家列表
                     const playersListDiv = document.getElementById('players-list');
                     playersListDiv.innerHTML = data.players.map((p, idx) => {
                         let statusBadge = '';
@@ -168,7 +281,6 @@
                         `;
                     }).join('');
 
-                    // 2. 准备状态
                     const me = data.players.find(x => x.isMe);
                     if (me) {
                         isReady = me.ready;
@@ -182,7 +294,6 @@
                         }
                     }
 
-                    // 3. 游戏UI展现与控制
                     const preGameActions = document.getElementById('pre-game-actions');
                     const inGameActions = document.getElementById('in-game-actions');
                     const targetCard = document.getElementById('target-card');
@@ -197,7 +308,6 @@
                             document.getElementById('target-name').innerText = me.targetPerson;
                         }
 
-                        // 我的历史提问与回答线索
                         const myHistoryList = document.getElementById('my-history-list');
                         const myPastQuestions = (data.question_history || []).filter(q => q.asker_id === myId);
                         if (myPastQuestions.length === 0) {
@@ -219,7 +329,6 @@
                             }).join('');
                         }
 
-                        // 问答交互状态分配
                         const activeQPanel = document.getElementById('active-question-panel');
                         const askActionArea = document.getElementById('ask-action-area');
                         const answerActionArea = document.getElementById('answer-action-area');
@@ -336,7 +445,6 @@
                         }
                     }
 
-                    // 4. 渲染日志
                     const eventsDiv = document.getElementById('events');
                     eventsDiv.innerHTML = data.events.map(ev => 
                         `<div class="py-0.5 border-b border-gray-100 text-gray-700">${ev.content}</div>`).join('');
