@@ -15,16 +15,16 @@
                 <input id="room-id" class="w-full border border-gray-300 p-3 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="请输入房间号 (如 888)">
                 <input id="user-name" class="w-full border border-gray-300 p-3 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="请输入你的名字">
                 
-                <!-- 新增：词库选择与管理区域 -->
+                <!-- 新增：角色库选择与管理区域 -->
                 <div class="flex gap-2">
                     <select id="library-select" class="flex-1 border border-gray-300 p-3 rounded-xl text-base bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
                         <option value="默认历史人物">加载中...</option>
                     </select>
-                    <button onclick="openLibraryManager()" class="bg-indigo-100 text-indigo-700 hover:bg-indigo-200 px-4 py-3 rounded-xl font-bold text-sm transition">管理词库</button>
+                    <button onclick="openLibraryManager()" class="bg-indigo-100 text-indigo-700 hover:bg-indigo-200 px-4 py-3 rounded-xl font-bold text-sm transition">管理角色库</button>
                 </div>
 
                 <button onclick="connect()" class="w-full bg-blue-500 hover:bg-blue-600 text-white p-3 rounded-xl font-bold text-base transition shadow-md">进入房间</button>
-                <p class="text-xs text-gray-400 text-center mt-2">注: 房间图库由首个创建房间的玩家决定</p>
+                <p class="text-xs text-gray-400 text-center mt-2">注: 房间角色库由首个创建房间的玩家决定</p>
             </div>
         </div>
 
@@ -112,26 +112,26 @@
         </div>
     </div>
 
-    <!-- 词库管理 Modal 弹窗 -->
+    <!-- 角色库管理 Modal 弹窗 -->
     <div id="library-modal" class="hidden fixed inset-0 bg-black bg-opacity-60 z-50 flex justify-center items-center p-4">
         <div class="bg-white rounded-2xl w-full max-w-md p-5 space-y-4">
             <div class="flex justify-between items-center border-b pb-3">
-                <h2 class="text-lg font-bold text-gray-800">词库管理</h2>
+                <h2 class="text-lg font-bold text-gray-800">角色库管理</h2>
                 <button onclick="closeLibraryManager()" class="text-gray-500 hover:text-gray-800 font-bold text-xl">&times;</button>
             </div>
             
             <div class="space-y-3">
                 <div>
-                    <label class="text-xs font-bold text-gray-600 mb-1 block">编辑已有词库，或直接输入新名称新建：</label>
+                    <label class="text-xs font-bold text-gray-600 mb-1 block">编辑已有角色库，或直接输入新名称新建：</label>
                     <div class="flex gap-2">
                         <select id="modal-lib-select" onchange="loadLibraryDetail()" class="border border-gray-300 p-2.5 rounded-lg text-sm flex-1 bg-gray-50">
-                            <option value="">-- 新建词库 --</option>
+                            <option value="">-- 新建角色库 --</option>
                         </select>
                     </div>
                 </div>
                 
                 <div>
-                    <input id="lib-name" class="w-full border border-gray-300 p-2.5 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="词库名称 (如: 动漫角色)">
+                    <input id="lib-name" class="w-full border border-gray-300 p-2.5 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="角色库名称 (如: 动漫角色)">
                 </div>
 
                 <div>
@@ -139,7 +139,7 @@
                     <textarea id="lib-content" rows="6" class="w-full border border-gray-300 p-2.5 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono" placeholder="孙悟空, 鸣人, 哆啦A梦..."></textarea>
                 </div>
 
-                <button onclick="saveLibrary()" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white p-3 rounded-xl font-bold text-sm transition">保存词库</button>
+                <button onclick="saveLibrary()" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white p-3 rounded-xl font-bold text-sm transition">保存角色库</button>
             </div>
         </div>
     </div>
@@ -148,7 +148,7 @@
         let ws;
         let isReady = false;
 
-        // --- 词库相关逻辑 ---
+        // --- 角色库相关逻辑 ---
         async function fetchLibraries() {
             try {
                 const res = await fetch('/api/libraries');
@@ -158,9 +158,9 @@
                 
                 let optionsHtml = data.libraries.map(lib => `<option value="${lib}">${lib}</option>`).join('');
                 sel.innerHTML = optionsHtml;
-                modalSel.innerHTML = '<option value="">-- 新建独立词库 --</option>' + optionsHtml;
+                modalSel.innerHTML = '<option value="">-- 新建角色库 --</option>' + optionsHtml;
             } catch (e) {
-                console.error('获取词库失败', e);
+                console.error('获取角色库失败', e);
             }
         }
 
@@ -219,7 +219,7 @@
             }
         }
 
-        // 初始化加载词库列表
+        // 初始化加载角色库列表
         window.addEventListener('DOMContentLoaded', fetchLibraries);
 
         // --- 原有游戏连接与操作逻辑 ---
@@ -248,9 +248,9 @@
                     document.getElementById('game-screen').classList.remove('hidden');
                     document.getElementById('room-title').innerText = `房间号: ${room}`;
                     
-                    // 显示当前房间绑定的图库
+                    // 显示当前房间绑定的角色库
                     if(data.library_name) {
-                        document.getElementById('room-lib-badge').innerText = `词库: ${data.library_name}`;
+                        document.getElementById('room-lib-badge').innerText = `角色库: ${data.library_name}`;
                     }
                     
                     document.getElementById('player-count').innerText = `在线: ${data.players.length}人`;
