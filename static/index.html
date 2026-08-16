@@ -73,6 +73,7 @@
                         <div class="flex gap-2">
                             <button onclick="answerQuestion('是')" class="flex-1 bg-emerald-500 hover:bg-emerald-600 text-white p-2.5 rounded-xl font-bold text-sm shadow">👍 是</button>
                             <button onclick="answerQuestion('否')" class="flex-1 bg-rose-500 hover:bg-rose-600 text-white p-2.5 rounded-xl font-bold text-sm shadow">👎 否</button>
+                            <button onclick="answerQuestion('是也不是')" class="flex-1 bg-amber-500 hover:bg-amber-600 text-white p-2.5 rounded-xl font-bold text-sm shadow">🤷 是也不是</button>
                         </div>
                     </div>
 
@@ -108,6 +109,15 @@
             <div class="border-t pt-3">
                 <h3 class="font-bold text-xs text-gray-500 mb-1.5 uppercase tracking-wider">实时动态</h3>
                 <div id="events" class="space-y-1 max-h-28 overflow-y-auto bg-gray-50 p-2.5 rounded-xl border text-xs"></div>
+            </div>
+
+            <div class="border-t pt-3 space-y-2">
+                <h3 class="font-bold text-xs text-gray-500 uppercase tracking-wider">房间聊天</h3>
+                <div id="chat-messages" class="space-y-1.5 h-32 overflow-y-auto bg-gray-50 p-2.5 rounded-xl border text-xs"></div>
+                <div class="flex gap-2">
+                    <input id="chat-input" maxlength="500" onkeydown="if (event.key === 'Enter') sendChat()" class="flex-1 border border-gray-300 p-2.5 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="说点什么…">
+                    <button onclick="sendChat()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl font-bold text-sm shadow">发送</button>
+                </div>
             </div>
         </div>
     </div>
@@ -147,6 +157,8 @@
     <script>
         let ws;
         let isReady = false;
+        let reconnectTimer;
+        let shouldReconnect = false;
 
         // --- 角色库相关逻辑 ---
         async function fetchLibraries() {
@@ -224,6 +236,7 @@
 
         // --- 原有游戏连接与操作逻辑 ---
         function connect() {
+            clearTimeout(reconnectTimer);
             const room = document.getElementById('room-id').value.trim();
             const name = document.getElementById('user-name').value.trim();
             const library = document.getElementById('library-select').value;
@@ -232,12 +245,20 @@
             
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
             // 附带 library query 参数
+            shouldReconnect = true;
             ws = new WebSocket(`${protocol}//${window.location.host}/ws/${room}/${encodeURIComponent(name)}?library=${encodeURIComponent(library)}`);
+
+            ws.onclose = () => {
+                if (shouldReconnect) {
+                    reconnectTimer = setTimeout(connect, 1500);
+                }
+            };
             
             ws.onmessage = (e) => {
                 const data = JSON.parse(e.data);
                 
                 if (data.type === 'ERROR') {
+                    shouldReconnect = false;
                     alert(data.message);
                     location.reload();
                     return;
@@ -253,14 +274,16 @@
                         document.getElementById('room-lib-badge').innerText = `角色库: ${data.library_name}`;
                     }
                     
-                    document.getElementById('player-count').innerText = `在线: ${data.players.length}人`;
+                    document.getElementById('player-count').innerText = `在线: ${data.players.filter(p => p.connected).length}人`;
                     
                     const myId = data.players.find(x => x.isMe)?.id;
 
                     const playersListDiv = document.getElementById('players-list');
                     playersListDiv.innerHTML = data.players.map((p, idx) => {
                         let statusBadge = '';
-                        if (p.finished) {
+                        if (!p.connected) {
+                            statusBadge = `<span class="text-xs text-gray-400">离线</span>`;
+                        } else if (p.finished) {
                             statusBadge = `<span class="text-xs text-purple-600 font-bold">🏆 已通关</span>`;
                         } else if (data.started && idx === data.turn_index) {
                             statusBadge = `<span class="text-xs text-blue-600 font-bold animate-pulse">👉 提问中</span>`;
@@ -317,7 +340,8 @@
                                 const answersHtml = Object.entries(q.answers).map(([pid, ans]) => {
                                     const pObj = data.players.find(x => x.id === pid);
                                     const pName = pObj ? pObj.name : '某玩家';
-                                    return `<span class="bg-white px-2 py-0.5 rounded border border-purple-200 text-gray-700">${pName}: <b class="${ans === '是' ? 'text-emerald-600' : 'text-rose-600'}">${ans}</b></span>`;
+                                    const answerColor = ans === '是' ? 'text-emerald-600' : ans === '否' ? 'text-rose-600' : 'text-amber-600';
+                                    return `<span class="bg-white px-2 py-0.5 rounded border border-purple-200 text-gray-700">${pName}: <b class="${answerColor}">${ans}</b></span>`;
                                 }).join(' ');
 
                                 return `
@@ -359,7 +383,7 @@
                                         const ans = q.answers[p.id];
                                         return `<div class="bg-white p-1.5 rounded border flex justify-between items-center">
                                             <span class="text-gray-700">${p.name}${p.finished ? ' (已通关)' : ''}</span>
-                                            <span class="font-bold ${ans ? 'text-green-600' : 'text-gray-400'}">${ans ? '已回答: ' + ans : '未回答'}</span>
+                                            <span class="font-bold ${ans === '是' ? 'text-emerald-600' : ans === '否' ? 'text-rose-600' : ans ? 'text-amber-600' : 'text-gray-400'}">${ans ? '已回答: ' + ans : '未回答'}</span>
                                         </div>`;
                                     }).join('');
 
@@ -384,7 +408,7 @@
                                         const ans = q.answers[p.id] || '无';
                                         return `<div class="bg-white p-1.5 rounded border flex justify-between items-center">
                                             <span class="text-gray-700">${p.name}</span>
-                                            <span class="font-bold text-green-600">${ans}</span>
+                                            <span class="font-bold ${ans === '是' ? 'text-emerald-600' : ans === '否' ? 'text-rose-600' : ans === '是也不是' ? 'text-amber-600' : 'text-gray-400'}">${ans}</span>
                                         </div>`;
                                     }).join('');
 
@@ -449,6 +473,25 @@
                     eventsDiv.innerHTML = data.events.map(ev => 
                         `<div class="py-0.5 border-b border-gray-100 text-gray-700">${ev.content}</div>`).join('');
                     eventsDiv.scrollTop = eventsDiv.scrollHeight;
+
+                    const chatMessagesDiv = document.getElementById('chat-messages');
+                    const chatFragment = document.createDocumentFragment();
+                    (data.chat_messages || []).forEach(message => {
+                        const row = document.createElement('div');
+                        row.className = 'break-words text-gray-700';
+                        const sender = document.createElement('span');
+                        sender.className = 'font-bold text-blue-700';
+                        sender.textContent = `${message.name} `;
+                        const timestamp = document.createElement('span');
+                        timestamp.className = 'text-gray-400';
+                        timestamp.textContent = `[${message.time}] `;
+                        const content = document.createElement('span');
+                        content.textContent = message.text;
+                        row.append(sender, timestamp, content);
+                        chatFragment.appendChild(row);
+                    });
+                    chatMessagesDiv.replaceChildren(chatFragment);
+                    chatMessagesDiv.scrollTop = chatMessagesDiv.scrollHeight;
                 }
             };
         }
@@ -463,6 +506,13 @@
             input.value = '';
         }
         function answerQuestion(ans) { ws.send(JSON.stringify({action: 'ANSWER_QUESTION', answer: ans})); }
+        function sendChat() {
+            const input = document.getElementById('chat-input');
+            const text = input.value.trim();
+            if (!text || !ws || ws.readyState !== WebSocket.OPEN) return;
+            ws.send(JSON.stringify({action: 'SEND_CHAT', text: text}));
+            input.value = '';
+        }
         function submitGuess() {
             const input = document.getElementById('guess-input');
             const guess = input.value.trim();

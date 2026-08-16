@@ -85,6 +85,10 @@ rooms = {}
 connections = {}
 ROOM_TIMEOUT = 600
 
+def connected_player_ids(room_id: str):
+    """Return the player IDs that currently have an active WebSocket."""
+    return {conn["id"] for conn in connections.get(room_id, [])}
+
 def cleanup_inactive_rooms():
     now = time.time()
     expired_rooms = [
@@ -99,7 +103,7 @@ def touch_room(room_id: str):
     if room_id in rooms:
         rooms[room_id]["last_activity"] = time.time()
 
-def advance_turn(room):
+def advance_turn(room, connected_ids=None):
     players = room["players"]
     if not players: return
     
@@ -119,14 +123,38 @@ def advance_turn(room):
     n = len(players)
     for i in range(1, n + 1):
         next_idx = (room["turn_index"] + i) % n
-        if not players[next_idx].get("finished", False):
+        if (
+            not players[next_idx].get("finished", False)
+            and (connected_ids is None or players[next_idx]["id"] in connected_ids)
+        ):
             room["turn_index"] = next_idx
-            break
+            return
+
+def move_question_to_guessing_if_ready(room_id: str):
+    """Do not wait for players who have disconnected while a question is open."""
+    room = rooms.get(room_id)
+    if not room:
+        return
+
+    question = room.get("current_question")
+    if not question or question["stage"] != "answering":
+        return
+
+    online_responders = [
+        player["id"]
+        for player in room["players"]
+        if player["id"] != question["asker_id"]
+        and player["id"] in connected_player_ids(room_id)
+    ]
+    if all(player_id in question["answers"] for player_id in online_responders):
+        question["stage"] = "guessing"
+        room["events"].append({"content": f"📢 【{question['asker_name']}】的提问已收到所有在线玩家的回答，请进行猜测或跳过！"})
 
 async def broadcast(room_id: str):
     if room_id not in connections: return
     room = rooms.get(room_id)
     if not room: return
+    online_ids = connected_player_ids(room_id)
     for conn in connections[room_id]:
         conn_id = conn["id"]
         payload = {
@@ -138,6 +166,7 @@ async def broadcast(room_id: str):
                     "ready": p["ready"],
                     "finished": p.get("finished", False),
                     "last_guess_wrong": p.get("last_guess_wrong", False),
+                    "connected": p["id"] in online_ids,
                     "targetPerson": (p["target"] if not room["started"] or p["id"] != conn_id or p.get("finished", False) else "???"), 
                     "isMe": p["id"] == conn_id
                 } 
@@ -148,6 +177,7 @@ async def broadcast(room_id: str):
             "current_question": room.get("current_question"),
             "question_history": room.get("question_history", []),
             "events": room["events"],
+            "chat_messages": room.get("chat_messages", []),
             "library_name": room.get("library_name", "默认")
         }
         try: 
@@ -187,6 +217,7 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, name: str, libr
             "current_question": None, 
             "question_history": [], 
             "events": [],
+            "chat_messages": [],
             "last_activity": time.time(),
             "library_name": library,
             "characters": characters
@@ -223,7 +254,19 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, name: str, libr
             data = json.loads(msg)
             action = data.get("action")
             
-            if action == "TOGGLE_READY" and not room["started"]:
+            if action == "SEND_CHAT":
+                text = data.get("text", "")
+                if isinstance(text, str):
+                    text = text.strip()
+                    if text:
+                        room["chat_messages"].append({
+                            "name": name,
+                            "text": text[:500],
+                            "time": time.strftime("%H:%M")
+                        })
+                        room["chat_messages"] = room["chat_messages"][-100:]
+
+            elif action == "TOGGLE_READY" and not room["started"]:
                 for p in room["players"]:
                     if p["id"] == pid:
                         p["ready"] = not p["ready"]
@@ -268,15 +311,12 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, name: str, libr
                 q = room["current_question"]
                 if q and q["stage"] == "answering" and pid != q["asker_id"]:
                     ans = data.get("answer")
-                    if ans in ["是", "否"]:
+                    if ans in ["是", "否", "是也不是"]:
                         q["answers"][pid] = ans
                         responder_name = next((p["name"] for p in room["players"] if p["id"] == pid), "某玩家")
                         room["events"].append({"content": f"💬 【{responder_name}】 回答 【{q['asker_name']}】: 【{ans}】"})
                         
-                        other_players = [p for p in room["players"] if p["id"] != q["asker_id"]]
-                        if all(p["id"] in q["answers"] for p in other_players):
-                            q["stage"] = "guessing"
-                            room["events"].append({"content": f"📢 【{q['asker_name']}】的提问已收到所有回答，请进行猜测或跳过！"})
+                        move_question_to_guessing_if_ready(room_id)
             
             elif action == "MAKE_GUESS" and room["started"]:
                 q = room["current_question"]
@@ -298,7 +338,7 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, name: str, libr
                     
                     room["question_history"].append(q)
                     room["current_question"] = None
-                    advance_turn(room)
+                    advance_turn(room, connected_player_ids(room_id))
             
             await broadcast(room_id)
             
@@ -313,6 +353,17 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, name: str, libr
             
             if disconnected_player:
                 rooms[room_id]["events"].append({"content": f"系统: {name} 离线"})
+
+            if room["started"]:
+                question = room["current_question"]
+                if question and question["asker_id"] == pid:
+                    room["events"].append({"content": f"系统: 【{name}】断线，已取消其当前提问并跳到下一位在线玩家。"})
+                    room["current_question"] = None
+                    advance_turn(room, connected_player_ids(room_id))
+                else:
+                    move_question_to_guessing_if_ready(room_id)
+                    if room["current_question"] is None:
+                        advance_turn(room, connected_player_ids(room_id))
             
             if not connections[room_id] and not room["started"]:
                 del connections[room_id]
