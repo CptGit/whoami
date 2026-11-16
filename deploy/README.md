@@ -19,7 +19,7 @@
 ```bash
 id "$DEPLOY_USER"
 id "$APP_USER"
-install -d -m 755 -o "$DEPLOY_USER" -g "$(id -gn "$DEPLOY_USER")" "$DEPLOY_DIR"
+sudo install -d -m 755 -o "$DEPLOY_USER" -g "$(id -gn "$DEPLOY_USER")" "$DEPLOY_DIR"
 ```
 
 目录必须是新的空目录，不能使用原线上代码目录。本地 `.deploy.env`、服务配置和 CI Secret 中的 `DEPLOY_DIR` 应保持一致。服务器需要 Git ≥ 2.17、Bash ≥ 4.2、flock 和 curl。
@@ -39,7 +39,7 @@ bash scripts/deploy.sh --prepare-only
 ```bash
 SERVICE_NAME=${SERVICE_NAME:-whoami.service}
 cd "$DEPLOY_DIR/releases/$RELEASE_SHA"
-runuser -u "$DEPLOY_USER" -- env \
+sudo runuser -u "$DEPLOY_USER" -- env \
   DEPLOY_DIR="$DEPLOY_DIR" APP_USER="$APP_USER" \
   DEPLOY_USER="$DEPLOY_USER" SERVICE_NAME="$SERVICE_NAME" \
   .venv/bin/python3 scripts/render-deploy-config.py
@@ -51,16 +51,16 @@ visudo -cf "$config_dir/whoami-deploy"
 
 ```bash
 cp -n "/etc/systemd/system/$SERVICE_NAME" "/etc/systemd/system/$SERVICE_NAME.before-releases"
-systemctl stop "$SERVICE_NAME"
+sudo systemctl stop "$SERVICE_NAME"
 if [[ -d "$OLD_APP_DIR/data/custom" ]]; then
     cp -a "$OLD_APP_DIR/data/custom/." "$DEPLOY_DIR/shared/custom/"
 fi
-chown -R "$APP_USER:$(id -gn "$APP_USER")" "$DEPLOY_DIR/shared/custom"
-install -o root -g root -m 644 "$config_dir/$SERVICE_NAME" "/etc/systemd/system/$SERVICE_NAME"
-install -o root -g root -m 440 "$config_dir/whoami-deploy" /etc/sudoers.d/whoami-deploy
+sudo chown -R "$APP_USER:$(id -gn "$APP_USER")" "$DEPLOY_DIR/shared/custom"
+sudo install -o root -g root -m 644 "$config_dir/$SERVICE_NAME" "/etc/systemd/system/$SERVICE_NAME"
+sudo install -o root -g root -m 440 "$config_dir/whoami-deploy" /etc/sudoers.d/whoami-deploy
 visudo -c
-systemctl daemon-reload
-systemctl enable "$SERVICE_NAME"
+sudo systemctl daemon-reload
+sudo systemctl enable "$SERVICE_NAME"
 ```
 
 sudoers 只允许部署账户免密执行 `/usr/bin/systemctl restart` 指定服务，不授权安装、停止服务或任意管理员命令。原代码、数据和旧服务配置备份暂时保留。
