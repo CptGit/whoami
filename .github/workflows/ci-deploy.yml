@@ -105,6 +105,7 @@ jobs:
         if: steps.latest.outputs.deploy == 'true'
         env:
           DEPLOY_HOST: deploy-target
+          DEPLOY_AS_USER: ${{ secrets.DEPLOY_USER }}
           DEPLOY_DIR: ${{ secrets.DEPLOY_DIR }}
           DEPLOY_REPO: ${{ secrets.DEPLOY_REPO }}
           SERVICE_NAME: ${{ secrets.DEPLOY_SERVICE_NAME }}

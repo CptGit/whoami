@@ -4,7 +4,9 @@ set -Eeuo pipefail
 # The service account must be able to read releases created by the SSH account.
 umask 022
 export GIT_TERMINAL_PROMPT=0
-export GIT_SSH_COMMAND='ssh -o BatchMode=yes -o StrictHostKeyChecking=yes'
+printf -v GIT_SSH_COMMAND 'ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes -i %q' \
+    "$HOME/.ssh/id_whoami_deploy"
+export GIT_SSH_COMMAND
 
 fail() { echo "$*" >&2; exit 1; }
 valid_sha() { [[ "$1" =~ ^[0-9a-f]{40}$ || "$1" =~ ^[0-9a-f]{64}$ ]]; }

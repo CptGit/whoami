@@ -1,2 +1,3 @@
 # Replace placeholders locally, validate with visudo, then install as root:root 0440.
 @DEPLOY_USER@ ALL=(root) NOPASSWD: /usr/bin/systemctl restart @SERVICE_NAME@
+@LOCAL_PUBLISH_RULE@

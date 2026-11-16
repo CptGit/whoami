@@ -21,16 +21,16 @@ bash scripts/setup.sh
 ## 本地触发部署
 
 1. 提交并推送代码。自动部署默认关闭。
-2. 复制 `.deploy.env.example` 为 `.deploy.env`，填写 SSH 别名、仓库地址和**新的发布根目录**（建议 `/srv/whoami`）。不要使用现有线上代码目录或其他用户的私有家目录。
+2. 复制 `.deploy.env.example` 为 `.deploy.env`，填写 SSH 别名、发布账户 `DEPLOY_AS_USER`、仓库地址和**新的发布根目录**（建议 `/srv/whoami`）。不要使用现有线上代码目录或其他用户的私有家目录。
 3. 首次由管理员在服务器创建目录并配置服务权限；服务器需能读取 Git 仓库。
 4. 执行 `bash scripts/deploy.sh --prepare-only`，先准备新版本，原服务继续运行。
 5. 管理员完成一次性数据迁移和服务安装后，本地执行 `bash scripts/deploy.sh`。
 
-首次设置见[部署说明](deploy/README.md)。之后部署、回退都从本地触发，无需打开服务器终端。脚本不接收 sudo 密码，仅使用限定的免密重启权限。真实配置不要提交。
+首次设置见[部署说明](deploy/README.md)。之后部署、回退都从本地触发，脚本使用管理员限定的免密授权。真实配置不要提交。
 
 ## 启用自动部署
 
-按[部署说明](deploy/README.md)配置 GitHub Actions Secrets，最后将 Actions Variable `DEPLOY_ENABLED` 设为 `true`，手动运行一次 `main` 工作流确认连接。
+为 CI 准备独立部署账户与专用 SSH 密钥，按[部署说明](deploy/README.md)配置 GitHub Actions Secrets，最后将 Actions Variable `DEPLOY_ENABLED` 设为 `true`，手动运行一次 `main` 工作流确认连接。
 
 之后推送到 `main`：**测试 → 发布精确提交 → 健康检查**。失败自动恢复旧版本；保留当前版本和最近 3 个历史版本。自定义角色库保存在共享目录，不随版本清理。
 

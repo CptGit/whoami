@@ -5,7 +5,8 @@ usage() {
     cat <<'USAGE'
 用法: bash scripts/deploy.sh [--dry-run] [--prepare-only | --rollback] [--ref 完整SHA] [SSH主机别名]
 
-从环境变量或未跟踪配置读取 DEPLOY_HOST、DEPLOY_DIR、DEPLOY_REPO。
+从环境变量或未跟踪配置读取 DEPLOY_HOST、DEPLOY_AS_USER、DEPLOY_DIR、DEPLOY_REPO。
+DEPLOY_AS_USER 必填：指定发布执行账户，与 SSH 登录账户不同时免密切换。
 DEPLOY_DIR 必须是独立发布根目录，不能是现有线上代码目录。
 默认保留当前版本与最近 3 个历史版本，SERVICE_NAME 默认 whoami.service。
 
@@ -19,7 +20,7 @@ USAGE
 PROJECT_ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$PROJECT_ROOT"
 declare -A overrides=()
-for name in DEPLOY_HOST DEPLOY_DIR DEPLOY_REPO SERVICE_NAME; do
+for name in DEPLOY_HOST DEPLOY_AS_USER DEPLOY_DIR DEPLOY_REPO SERVICE_NAME; do
     if [[ -v "$name" ]]; then overrides[$name]=${!name}; fi
 done
 config_file=${DEPLOY_CONFIG_FILE:-$PROJECT_ROOT/.deploy.env}
@@ -27,6 +28,7 @@ if [[ -f "$config_file" ]]; then source "$config_file"; fi
 for name in "${!overrides[@]}"; do printf -v "$name" '%s' "${overrides[$name]}"; done
 
 host=${DEPLOY_HOST:-}
+deploy_as=${DEPLOY_AS_USER:-}
 root=${DEPLOY_DIR:-}
 source_repo=${DEPLOY_REPO:-}
 service=${SERVICE_NAME:-whoami.service}
@@ -64,11 +66,12 @@ if [[ "$mode" == rollback && "$ref" != HEAD ]]; then
     exit 2
 fi
 
-if [[ -z "$host" || -z "$root" || ( "$mode" != rollback && -z "$source_repo" ) ]]; then
-    echo '缺少 DEPLOY_HOST、DEPLOY_DIR 或 DEPLOY_REPO，请配置私有环境变量或配置文件。' >&2
+if [[ -z "$host" || -z "$deploy_as" || -z "$root" || ( "$mode" != rollback && -z "$source_repo" ) ]]; then
+    echo '缺少 DEPLOY_HOST、DEPLOY_AS_USER、DEPLOY_DIR 或 DEPLOY_REPO，请配置私有环境变量或配置文件。' >&2
     exit 2
 fi
 if [[ ! "$host" =~ ^[a-zA-Z0-9_][a-zA-Z0-9_.@-]*$ ]] ||
+   [[ ! "$deploy_as" =~ ^[a-zA-Z_][a-zA-Z0-9_-]*$ || "$deploy_as" == root ]] ||
    [[ ! "$root" =~ ^/[a-zA-Z0-9_./-]+$ || "$root" =~ ^/+$ || "$root" =~ (^|/)\.{1,2}(/|$) ]] ||
    [[ ! "$service" =~ ^[a-zA-Z0-9_][a-zA-Z0-9_.@-]*\.service$ ]] ||
    [[ "$source_repo" == -* || "$source_repo" == *$'\n'* ]]; then
@@ -80,10 +83,18 @@ sha=''
 if [[ "$mode" != rollback ]]; then sha=$(git rev-parse --verify "$ref^{commit}"); fi
 if $dry_run; then
     echo "发布模式: $mode；提交: ${sha:-previous}。"
+    echo "发布执行账户: $deploy_as。"
     echo '仅部署已提交并推送的代码；本地未提交改动不会传输。未连接服务器。'
     exit 0
 fi
 # Only the deployment program is streamed; application code is fetched by Git on the server.
-printf -v remote_args '%q ' "$root" "$source_repo" "$sha" "$service" "$mode"
+remote_bootstrap='deploy_as=$1; shift
+if [[ "$deploy_as" != "$(id -un)" ]]; then
+    cd /
+    exec sudo -n -H -u "$deploy_as" -- /bin/bash -s -- "$@"
+fi
+exec /bin/bash -s -- "$@"'
+printf -v remote_args '%q ' "$deploy_as" "$root" "$source_repo" "$sha" "$service" "$mode"
+printf -v remote_command 'bash -c %q bash %s' "$remote_bootstrap" "$remote_args"
 ssh -T -o BatchMode=yes -o ConnectTimeout=10 "$host" \
-    "bash -s -- $remote_args" < scripts/release.sh
+    "$remote_command" < scripts/release.sh
