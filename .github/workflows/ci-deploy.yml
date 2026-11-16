@@ -1,0 +1,116 @@
+name: Test and deploy
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Keep in-progress deployments intact; serialize main branch runs.
+concurrency:
+  group: whoami-${{ github.ref }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  test:
+    name: Python and browser logic tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version-file: pyproject.toml
+          enable-cache: true
+          cache-dependency-glob: |
+            pyproject.toml
+            uv.lock
+            .python-version
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - name: Prepare development environment
+        run: bash scripts/setup.sh
+      - name: Check deployment shell syntax
+        run: bash -n scripts/setup.sh scripts/deploy.sh scripts/release.sh
+      - name: Test server and deployment scripts
+        run: .venv/bin/python3 -m unittest discover -s tests -v
+      - name: Test browser reconnect and countdown logic
+        run: .tools/node/bin/node tests/client.test.js
+
+  deploy:
+    name: Deploy to production
+    needs: test
+    if: vars.DEPLOY_ENABLED == 'true' && github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: production
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Skip an outdated commit
+        id: latest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          latest_sha=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')
+          if [[ "$latest_sha" == "$GITHUB_SHA" ]]; then
+            echo 'deploy=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'deploy=false' >> "$GITHUB_OUTPUT"
+            echo 'main 已有更新，跳过旧提交的部署。' >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Configure deployment SSH identity
+        if: steps.latest.outputs.deploy == 'true'
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+          DEPLOY_SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          for name in DEPLOY_HOST DEPLOY_USER DEPLOY_PORT DEPLOY_SSH_PRIVATE_KEY DEPLOY_KNOWN_HOSTS; do
+            if [[ -z "${!name}" ]]; then
+              echo "::error::缺少部署 Secret: $name"
+              exit 1
+            fi
+          done
+          if [[ ! "$DEPLOY_HOST" =~ ^[a-zA-Z0-9][a-zA-Z0-9.:-]*$ ]] ||
+             [[ ! "$DEPLOY_USER" =~ ^[a-zA-Z_][a-zA-Z0-9_-]*$ ]] ||
+             [[ ! "$DEPLOY_PORT" =~ ^[0-9]{1,5}$ ]] ||
+             (( 10#$DEPLOY_PORT < 1 || 10#$DEPLOY_PORT > 65535 )); then
+            echo '::error::部署主机、用户或端口格式无效。'
+            exit 1
+          fi
+          install -d -m 700 "$HOME/.ssh"
+          (umask 077; printf '%s\n' "$DEPLOY_SSH_PRIVATE_KEY" > "$HOME/.ssh/whoami_deploy")
+          ssh-keygen -y -P '' -f "$HOME/.ssh/whoami_deploy" > /dev/null
+          (umask 077; printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts")
+          printf 'Host deploy-target\n    HostName %s\n    User %s\n    Port %s\n    IdentityFile ~/.ssh/whoami_deploy\n    IdentitiesOnly yes\n    StrictHostKeyChecking yes\n    UserKnownHostsFile ~/.ssh/known_hosts\n' \
+            "$DEPLOY_HOST" "$DEPLOY_USER" "$DEPLOY_PORT" > "$HOME/.ssh/config"
+          chmod 600 "$HOME/.ssh/config"
+      - name: Release exact tested commit
+        if: steps.latest.outputs.deploy == 'true'
+        env:
+          DEPLOY_HOST: deploy-target
+          DEPLOY_DIR: ${{ secrets.DEPLOY_DIR }}
+          DEPLOY_REPO: ${{ secrets.DEPLOY_REPO }}
+          SERVICE_NAME: ${{ secrets.DEPLOY_SERVICE_NAME }}
+        run: |
+          bash scripts/deploy.sh --ref "$GITHUB_SHA"
+          echo "已部署提交 $GITHUB_SHA，HTTP 检查通过。" >> "$GITHUB_STEP_SUMMARY"
+      - name: Remove deployment private key
+        if: always()
+        run: rm -f "$HOME/.ssh/whoami_deploy"

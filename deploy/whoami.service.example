@@ -1,0 +1,18 @@
+[Unit]
+Description=Who Am I Game Backend
+After=network.target
+
+[Service]
+Type=simple
+User=@APP_USER@
+WorkingDirectory=@DEPLOY_DIR@/current
+Environment=WHOAMI_CUSTOM_DIR=@DEPLOY_DIR@/shared/custom
+Environment=PYTHONDONTWRITEBYTECODE=1
+EnvironmentFile=@DEPLOY_DIR@/current/.release.env
+# One worker: rooms and WebSocket connections are held in process memory.
+ExecStart=@DEPLOY_DIR@/current/.venv/bin/uvicorn main:app --host 127.0.0.1 --port 8000 --workers 1 --lifespan on
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

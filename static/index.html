@@ -27,6 +27,7 @@
                 <p class="text-xs text-gray-400 text-center mt-2">注: 房间角色库由首个创建房间的玩家决定</p>
             </div>
         </div>
+        <p id="connection-status" role="status" class="text-xs text-gray-500 mt-2"></p>
 
         <!-- 游戏界面 (保持不变的主体结构) -->
         <div id="game-screen" class="hidden space-y-4">
@@ -78,7 +79,7 @@
                     </div>
 
                     <div id="guess-action-area" class="pt-2 border-t border-purple-200 hidden space-y-2">
-                        <p class="text-xs text-purple-700 font-bold">所有回答完毕，请输入猜测或直接跳过：</p>
+                        <p class="text-xs text-purple-700 font-bold">回答已收集完毕，请在 30 秒内猜测或跳过，超时自动跳过。</p>
                         <div class="flex gap-2">
                             <input id="guess-input" class="flex-1 border border-purple-300 p-2 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-purple-500" placeholder="输入猜测的名字...">
                             <button onclick="submitGuess()" class="bg-purple-600 hover:bg-purple-700 text-white px-3 py-2 rounded-lg font-bold text-sm shadow">提交猜测</button>
@@ -159,6 +160,36 @@
         let isReady = false;
         let reconnectTimer;
         let shouldReconnect = false;
+        let connectionDetails;
+        let connectionReady = false;
+        let heartbeatTimer;
+        let connectTimeout;
+        let lastMessageAt = 0;
+        let pendingPingAt = 0;
+        let reconnectAttempts = 0;
+        let currentState;
+        let countdownDeadline = null;
+
+        function setConnectionStatus(message, ready = false) {
+            connectionReady = ready;
+            document.getElementById('connection-status').textContent = message;
+            document.querySelectorAll('#game-screen button, #game-screen input').forEach(control => {
+                control.disabled = !ready || (control.id === 'start-btn' && !canStartGame());
+            });
+        }
+
+        function canStartGame() {
+            return currentState && currentState.players.length > 0
+                && currentState.players.every(p => p.ready && p.connected);
+        }
+
+        function updateCountdown() {
+            if (countdownDeadline === null) return;
+            const remaining = Math.max(0, Math.ceil((countdownDeadline - performance.now()) / 1000));
+            document.getElementById('aq-status').textContent = remaining > 0
+                ? `等待猜测 · ${remaining} 秒后自动跳过` : '时间到，正在跳过…';
+        }
+        setInterval(updateCountdown, 250);
 
         // --- 角色库相关逻辑 ---
         async function fetchLibraries() {
@@ -236,26 +267,67 @@
 
         // --- 原有游戏连接与操作逻辑 ---
         function connect() {
-            clearTimeout(reconnectTimer);
             const room = document.getElementById('room-id').value.trim();
             const name = document.getElementById('user-name').value.trim();
             const library = document.getElementById('library-select').value;
             
             if (!room || !name) return alert('请完整填写房间号和名字！');
-            
-            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            // 附带 library query 参数
+            connectionDetails = {room, name, library};
             shouldReconnect = true;
-            ws = new WebSocket(`${protocol}//${window.location.host}/ws/${room}/${encodeURIComponent(name)}?library=${encodeURIComponent(library)}`);
+            reconnectAttempts = 0;
+            currentState = null;
+            openConnection(true);
+        }
 
-            ws.onclose = () => {
+        function openConnection(force = false) {
+            if (!shouldReconnect || !connectionDetails) return;
+            if (!force && ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
+            clearTimeout(reconnectTimer);
+            clearTimeout(connectTimeout);
+            clearInterval(heartbeatTimer);
+            if (ws) {
+                const oldSocket = ws;
+                ws = null;
+                oldSocket.close();
+            }
+            setConnectionStatus('连接恢复中，正在同步房间…');
+            const {room, name, library} = connectionDetails;
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const socket = new WebSocket(`${protocol}//${window.location.host}/ws/${encodeURIComponent(room)}/${encodeURIComponent(name)}?library=${encodeURIComponent(library)}`);
+            ws = socket;
+            pendingPingAt = 0;
+            connectTimeout = setTimeout(() => {
+                if (ws === socket) openConnection(true);
+            }, 10000);
+
+            socket.onopen = () => {
+                if (ws !== socket) return;
+                lastMessageAt = Date.now();
+                heartbeatTimer = setInterval(checkConnection, 15000);
+            };
+            socket.onclose = (event) => {
+                if (ws !== socket) return;
+                clearTimeout(connectTimeout);
+                clearInterval(heartbeatTimer);
+                setConnectionStatus('连接已中断，正在自动重连…');
+                if (event.code === 4001) {
+                    shouldReconnect = false;
+                    setConnectionStatus('已在其他页面连接，请重新进入房间。');
+                    document.getElementById('login-screen').classList.remove('hidden');
+                    return;
+                }
                 if (shouldReconnect) {
-                    reconnectTimer = setTimeout(connect, 1500);
+                    const delay = Math.min(1000 * 2 ** reconnectAttempts++, 5000);
+                    reconnectTimer = setTimeout(openConnection, delay);
                 }
             };
-            
-            ws.onmessage = (e) => {
+
+            socket.onmessage = (e) => {
+                if (ws !== socket) return;
+                lastMessageAt = Date.now();
+                pendingPingAt = 0;
                 const data = JSON.parse(e.data);
+                if (data.type === 'PONG') return;
                 
                 if (data.type === 'ERROR') {
                     shouldReconnect = false;
@@ -265,6 +337,18 @@
                 }
 
                 if (data.type === 'ROOM_STATE') {
+                    if (currentState && data.room_instance_id === currentState.room_instance_id
+                            && data.revision < currentState.revision) return;
+                    clearTimeout(connectTimeout);
+                    reconnectAttempts = 0;
+                    // Clear a previous guess when the server has moved to another question.
+                    if (currentState?.current_question?.id !== data.current_question?.id) {
+                        document.getElementById('guess-input').value = '';
+                    }
+                    currentState = data;
+                    const question = data.current_question;
+                    countdownDeadline = data.started && question?.stage === 'guessing'
+                        ? performance.now() + (question.guess_deadline - data.server_time) * 1000 : null;
                     document.getElementById('login-screen').classList.add('hidden');
                     document.getElementById('game-screen').classList.remove('hidden');
                     document.getElementById('room-title').innerText = `房间号: ${room}`;
@@ -282,7 +366,7 @@
                     playersListDiv.innerHTML = data.players.map((p, idx) => {
                         let statusBadge = '';
                         if (!p.connected) {
-                            statusBadge = `<span class="text-xs text-gray-400">离线</span>`;
+                            statusBadge = `<span class="text-xs text-gray-400">${p.reconnecting ? '重连中' : '离线'}</span>`;
                         } else if (p.finished) {
                             statusBadge = `<span class="text-xs text-purple-600 font-bold">🏆 已通关</span>`;
                         } else if (data.started && idx === data.turn_index) {
@@ -383,7 +467,7 @@
                                         const ans = q.answers[p.id];
                                         return `<div class="bg-white p-1.5 rounded border flex justify-between items-center">
                                             <span class="text-gray-700">${p.name}${p.finished ? ' (已通关)' : ''}</span>
-                                            <span class="font-bold ${ans === '是' ? 'text-emerald-600' : ans === '否' ? 'text-rose-600' : ans ? 'text-amber-600' : 'text-gray-400'}">${ans ? '已回答: ' + ans : '未回答'}</span>
+                                            <span class="font-bold ${ans === '是' ? 'text-emerald-600' : ans === '否' ? 'text-rose-600' : ans ? 'text-amber-600' : 'text-gray-400'}">${ans ? '已回答: ' + ans : p.reconnecting ? '等待重连' : p.connected ? '未回答' : '离线，已略过'}</span>
                                         </div>`;
                                     }).join('');
 
@@ -459,7 +543,7 @@
                         inGameActions.classList.add('hidden');
                         targetCard.classList.add('hidden');
 
-                        const allReady = data.players.length > 0 && data.players.every(p => p.ready);
+                        const allReady = canStartGame();
                         if (allReady) {
                             startBtn.classList.remove('opacity-50', 'cursor-not-allowed');
                             startBtn.removeAttribute('disabled');
@@ -492,35 +576,71 @@
                     });
                     chatMessagesDiv.replaceChildren(chatFragment);
                     chatMessagesDiv.scrollTop = chatMessagesDiv.scrollHeight;
+                    updateCountdown();
+                    setConnectionStatus('已连接', true);
                 }
             };
         }
 
-        function toggleReady() { ws.send(JSON.stringify({action: 'TOGGLE_READY'})); }
-        function startGame() { ws.send(JSON.stringify({action: 'START_GAME'})); }
+        function checkConnection() {
+            if (!shouldReconnect || document.visibilityState === 'hidden') return;
+            if (!ws || ws.readyState === WebSocket.CLOSED || ws.readyState === WebSocket.CLOSING) {
+                openConnection();
+            } else if (ws.readyState === WebSocket.OPEN) {
+                if (Date.now() - lastMessageAt > 45000 || (pendingPingAt && Date.now() - pendingPingAt > 5000)) {
+                    openConnection(true);
+                } else if (!pendingPingAt) {
+                    pendingPingAt = Date.now();
+                    const pingAt = pendingPingAt;
+                    const socket = ws;
+                    ws.send(JSON.stringify({action: 'PING'}));
+                    setTimeout(() => {
+                        if (ws === socket && pendingPingAt === pingAt) openConnection(true);
+                    }, 5000);
+                }
+            }
+        }
+
+        document.addEventListener('visibilitychange', checkConnection);
+        window.addEventListener('online', checkConnection);
+        window.addEventListener('pageshow', checkConnection);
+
+        function sendAction(action) {
+            if (!connectionReady || !ws || ws.readyState !== WebSocket.OPEN) {
+                setConnectionStatus('连接恢复中，请同步完成后再操作。');
+                checkConnection();
+                return false;
+            }
+            ws.send(JSON.stringify({
+                ...action,
+                turn_id: currentState?.turn_id,
+                question_id: currentState?.current_question?.id
+            }));
+            return true;
+        }
+
+        function toggleReady() { sendAction({action: 'TOGGLE_READY'}); }
+        function startGame() { sendAction({action: 'START_GAME'}); }
         function askQuestion() {
             const input = document.getElementById('question');
             const text = input.value.trim();
             if (!text) return;
-            ws.send(JSON.stringify({action: 'ASK_QUESTION', text: text}));
-            input.value = '';
+            if (sendAction({action: 'ASK_QUESTION', text: text})) input.value = '';
         }
-        function answerQuestion(ans) { ws.send(JSON.stringify({action: 'ANSWER_QUESTION', answer: ans})); }
+        function answerQuestion(ans) { sendAction({action: 'ANSWER_QUESTION', answer: ans}); }
         function sendChat() {
             const input = document.getElementById('chat-input');
             const text = input.value.trim();
-            if (!text || !ws || ws.readyState !== WebSocket.OPEN) return;
-            ws.send(JSON.stringify({action: 'SEND_CHAT', text: text}));
-            input.value = '';
+            if (!text) return;
+            if (sendAction({action: 'SEND_CHAT', text: text})) input.value = '';
         }
         function submitGuess() {
             const input = document.getElementById('guess-input');
             const guess = input.value.trim();
             if (!guess) return alert('请输入猜测！');
-            ws.send(JSON.stringify({action: 'MAKE_GUESS', guess: guess}));
-            input.value = '';
+            if (sendAction({action: 'MAKE_GUESS', guess: guess})) input.value = '';
         }
-        function skipGuess() { ws.send(JSON.stringify({action: 'MAKE_GUESS', guess: ''})); }
+        function skipGuess() { sendAction({action: 'MAKE_GUESS', guess: ''}); }
     </script>
 </body>
 </html>

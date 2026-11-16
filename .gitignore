@@ -2,3 +2,12 @@
 
 __pycache__/
 .venv/
+data/custom/
+.uv-cache/
+.deploy.env
+.deploy/
+.env
+.env.*
+!.env.example
+.release.env
+.tools/

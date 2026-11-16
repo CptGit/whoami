@@ -1,0 +1,18 @@
+[project]
+name = "whoami"
+version = "0.1.0"
+description = "多人身份猜测游戏，基于 FastAPI 与 WebSocket"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "fastapi==0.141.1",
+    "pydantic==2.13.4",
+    "uvicorn==0.52.1",
+    "websockets==17.0.1",
+]
+
+[tool.uv]
+# Also read by setup.sh and setup-uv in GitHub Actions.
+required-version = "==0.12.3"
+# This repository is a runnable application, not a distributable Python package.
+package = false
