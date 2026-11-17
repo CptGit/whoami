@@ -55,12 +55,12 @@ class GameTests(unittest.IsolatedAsyncioTestCase):
     def room(self):
         return main.rooms['test']
 
-    async def connect(self, name):
+    async def connect(self, name, room_id='test', expected='ROOM_STATE', **options):
         socket = Socket()
         self.sockets.append(socket)
-        self.tasks[socket] = asyncio.create_task(main.websocket_endpoint(socket, 'test', name))
+        self.tasks[socket] = asyncio.create_task(main.websocket_endpoint(socket, room_id, name, **options))
         state = await socket.receive()
-        self.assertEqual(state['type'], 'ROOM_STATE')
+        self.assertEqual(state['type'], expected)
         return socket, state
 
     async def send(self, socket, data):
@@ -72,6 +72,10 @@ class GameTests(unittest.IsolatedAsyncioTestCase):
 
     async def disconnect(self, socket):
         socket.incoming.put_nowait(WebSocketDisconnect())
+        await asyncio.wait_for(self.tasks[socket], timeout=2)
+
+    async def leave(self, socket):
+        socket.incoming.put_nowait(json.dumps({'action': 'LEAVE_ROOM'}))
         await asyncio.wait_for(self.tasks[socket], timeout=2)
 
     async def start(self, names=('A', 'B', 'C')):
@@ -225,6 +229,144 @@ class GameTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(self.room['started'])
         self.assertIsNone(self.room['current_question'])
         self.assertTrue(all(not p['ready'] for p in self.room['players']))
+
+    async def test_lobby_lists_real_rooms_without_exposing_game_content(self):
+        self.assertEqual(await main.get_rooms(), {'rooms': []})
+        a, state = await self.connect('A', mode='create', title='朋友的桌子', capacity=4)
+        await self.connect('B', mode='join')
+        await self.send(a, {'action': 'SEND_CHAT', 'text': '只有房间里才能看到'})
+        activity = self.room['last_activity']
+        listing = (await main.get_rooms())['rooms']
+        self.assertEqual(len(listing), 1)
+        self.assertEqual(listing[0], {
+            'id': 'test', 'name': '朋友的桌子', 'host_name': 'A',
+            'library_name': '默认历史人物', 'player_count': 2, 'online_count': 2,
+            'max_players': 4, 'started': False, 'joinable': True,
+        })
+        self.assertEqual(self.room['last_activity'], activity)
+        self.assertEqual(state['room_name'], '朋友的桌子')
+        self.assertEqual(state['host_id'], self.room['players'][0]['id'])
+        self.assertNotIn('characters', listing[0])
+        self.assertNotIn('chat_messages', listing[0])
+
+    async def test_joining_a_missing_room_never_creates_it(self):
+        socket, message = await self.connect('A', mode='join', expected='ERROR')
+        await asyncio.wait_for(self.tasks[socket], timeout=2)
+        self.assertIn('已解散', message['message'])
+        self.assertNotIn('test', main.rooms)
+
+    async def test_creating_an_existing_room_does_not_replace_it(self):
+        await self.connect('A', mode='create', title='原房间')
+        instance = self.room['instance_id']
+        socket, message = await self.connect('B', mode='create', title='替换房间', expected='ERROR')
+        await asyncio.wait_for(self.tasks[socket], timeout=2)
+        self.assertIn('已被占用', message['message'])
+        self.assertEqual(self.room['instance_id'], instance)
+        self.assertEqual(self.room['name'], '原房间')
+        self.assertEqual(len(self.room['players']), 1)
+
+    async def test_invalid_creation_settings_leave_no_room_behind(self):
+        for options in [{'capacity': 1}, {'title': '长' * 31}, {'library': '不存在的角色库'}]:
+            with self.subTest(options=options):
+                socket, _ = await self.connect('A', mode='create', expected='ERROR', **options)
+                await asyncio.wait_for(self.tasks[socket], timeout=2)
+                self.assertNotIn('test', main.rooms)
+
+    async def test_full_rooms_reject_new_players_but_allow_reconnection(self):
+        a, _ = await self.connect('A', mode='create', capacity=2)
+        await self.connect('B', mode='join')
+        socket, message = await self.connect('C', mode='join', expected='ERROR')
+        await asyncio.wait_for(self.tasks[socket], timeout=2)
+        self.assertIn('房间已满', message['message'])
+        self.assertFalse((await main.get_rooms())['rooms'][0]['joinable'])
+        player_id = self.room['players'][0]['id']
+        await self.disconnect(a)
+        _, state = await self.connect('A', mode='join')
+        self.assertEqual(next(p['id'] for p in state['players'] if p['isMe']), player_id)
+        self.assertEqual(len(self.room['players']), 2)
+
+    async def test_started_rooms_are_listed_but_reject_new_players(self):
+        await self.start(('A', 'B'))
+        listing = (await main.get_rooms())['rooms'][0]
+        self.assertTrue(listing['started'])
+        self.assertFalse(listing['joinable'])
+        socket, message = await self.connect('C', mode='join', expected='ERROR')
+        await asyncio.wait_for(self.tasks[socket], timeout=2)
+        self.assertIn('正在游戏中', message['message'])
+        self.assertEqual(len(self.room['players']), 2)
+
+    async def test_only_host_can_start_and_at_least_two_ready_players_are_required(self):
+        a, _ = await self.connect('A', mode='create')
+        await self.send(a, {'action': 'TOGGLE_READY'})
+        await self.send(a, {'action': 'START_GAME'})
+        self.assertFalse(self.room['started'])
+        b, _ = await self.connect('B', mode='join')
+        await self.send(b, {'action': 'TOGGLE_READY'})
+        await self.send(b, {'action': 'START_GAME'})
+        self.assertFalse(self.room['started'])
+        await self.send(a, {'action': 'START_GAME'})
+        self.assertTrue(self.room['started'])
+
+    async def test_explicit_leave_transfers_host_and_last_player_dissolves_room(self):
+        a, _ = await self.connect('A', mode='create')
+        b, state = await self.connect('B', mode='join')
+        b_id = next(p['id'] for p in state['players'] if p['isMe'])
+        await self.leave(a)
+        self.assertEqual(self.room['host_id'], b_id)
+        self.assertEqual([p['name'] for p in self.room['players']], ['B'])
+        self.assertEqual((await main.get_rooms())['rooms'][0]['host_name'], 'B')
+        await self.leave(b)
+        self.assertNotIn('test', main.rooms)
+        self.assertNotIn('test', main.connections)
+        self.assertEqual(await main.get_rooms(), {'rooms': []})
+
+    async def test_host_disconnect_preserves_grace_then_transfers_host(self):
+        a, b = await self.start(('A', 'B'))
+        a_id, b_id = [p['id'] for p in self.room['players']]
+        await self.disconnect(a)
+        self.assertEqual(self.room['host_id'], a_id)
+        main.reconcile_room('test', time.time() + main.RECONNECT_GRACE_SECONDS + 1)
+        self.assertEqual(self.room['host_id'], b_id)
+
+    async def test_leaving_during_a_question_advances_immediately_and_remaining_player_can_finish(self):
+        a, b = await self.start(('A', 'B'))
+        question = await self.ask(a)
+        await self.leave(a)
+        self.assertIsNone(self.room['current_question'])
+        self.assertEqual(self.room['turn_index'], 1)
+        self.assertEqual(question['outcome'], 'disconnected')
+        rejected, _ = await self.connect('A', mode='join', expected='ERROR')
+        await asyncio.wait_for(self.tasks[rejected], timeout=2)
+        final_question = await self.ask(b)
+        self.assertEqual(final_question['stage'], 'guessing')
+        await self.guess(b, final_question, self.room['players'][1]['target'])
+        self.assertFalse(self.room['started'])
+        main.reconcile_room('test')
+        self.assertEqual([p['name'] for p in self.room['players']], ['B'])
+
+    async def test_expired_empty_rooms_are_hidden_and_polling_does_not_keep_them_alive(self):
+        a, _ = await self.connect('A')
+        await self.disconnect(a)
+        player = self.room['players'][0]
+        player['disconnected_at'] -= main.RECONNECT_GRACE_SECONDS + 1
+        self.room['last_activity'] -= main.ROOM_TIMEOUT + 1
+        self.assertEqual(await main.get_rooms(), {'rooms': []})
+        self.assertNotIn('test', main.rooms)
+
+    async def test_queued_broadcast_cannot_send_a_dissolved_rooms_state_to_a_new_room(self):
+        a, first_state = await self.connect('A', mode='create')
+        old_lock = self.room['broadcast_lock']
+        await old_lock.acquire()
+        pending = asyncio.create_task(main.broadcast('test'))
+        await asyncio.sleep(0)
+        try:
+            await self.leave(a)
+            b, new_state = await self.connect('B', mode='create')
+        finally:
+            old_lock.release()
+            await pending
+        self.assertNotEqual(first_state['room_instance_id'], new_state['room_instance_id'])
+        self.assertTrue(b.outgoing.empty())
 
 
 class HealthTests(unittest.IsolatedAsyncioTestCase):

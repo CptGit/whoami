@@ -103,6 +103,42 @@ connections = {}
 ROOM_TIMEOUT = 600
 RECONNECT_GRACE_SECONDS = 60
 GUESS_TIMEOUT_SECONDS = 30
+DEFAULT_MAX_PLAYERS = 8
+
+@app.get("/api/rooms")
+async def get_rooms():
+    """Expose only public lobby information, never characters or round state."""
+    cleanup_inactive_rooms()
+    now = time.time()
+    summaries = []
+    for room_id, room in rooms.items():
+        eligible_ids = eligible_player_ids(room_id, now)
+        if not eligible_ids:
+            continue
+        online_ids = connected_player_ids(room_id)
+        host = next((p for p in room["players"] if p["id"] == room.get("host_id")), None)
+        summaries.append({
+            "id": room_id,
+            "name": room.get("name", f"房间 {room_id}"),
+            "host_name": host["name"] if host else "等待房主",
+            "library_name": room["library_name"],
+            "player_count": len(eligible_ids),
+            "online_count": len(online_ids),
+            "max_players": room.get("max_players", DEFAULT_MAX_PLAYERS),
+            "started": room["started"],
+            "joinable": not room["started"] and len(eligible_ids) < room.get("max_players", DEFAULT_MAX_PLAYERS),
+        })
+    summaries.sort(key=lambda room: (not room["joinable"], room["started"], room["id"]))
+    return {"rooms": summaries}
+
+def update_host(room_id: str, now=None):
+    room = rooms[room_id]
+    eligible_ids = eligible_player_ids(room_id, now)
+    if room.get("host_id") not in eligible_ids:
+        online_ids = connected_player_ids(room_id)
+        candidates = [p for p in room["players"] if p["id"] in online_ids or p["id"] in eligible_ids]
+        candidates.sort(key=lambda p: p["id"] not in online_ids)
+        room["host_id"] = candidates[0]["id"] if candidates else None
 
 def eligible_player_ids(room_id: str, now=None):
     """Keep temporarily disconnected players in the current round."""
@@ -110,8 +146,10 @@ def eligible_player_ids(room_id: str, now=None):
     online_ids = connected_player_ids(room_id)
     return {
         p["id"] for p in rooms[room_id]["players"]
-        if p["id"] in online_ids
-        or now - p.get("disconnected_at", 0) < RECONNECT_GRACE_SECONDS
+        if not p.get("left") and (
+            p["id"] in online_ids
+            or now - p.get("disconnected_at", 0) < RECONNECT_GRACE_SECONDS
+        )
     }
 
 def connected_player_ids(room_id: str):
@@ -137,7 +175,7 @@ def advance_turn(room, connected_ids=None):
     players = room["players"]
     if not players: return
     
-    if all(p.get("finished", False) for p in players):
+    if all(p.get("finished", False) or p.get("left", False) for p in players):
         room["started"] = False
         room["turn_index"] = 0
         room["turn_id"] = uuid4().hex
@@ -148,7 +186,7 @@ def advance_turn(room, connected_ids=None):
             p["finished"] = False
             p["last_guess_wrong"] = False
             p["target"] = ""
-        room["events"].append({"content": "🏆 游戏结束！所有玩家都已成功猜出自己的身份！房间已重置。"})
+        room["events"].append({"content": "🏆 游戏结束！所有仍在参与的玩家都已成功猜出身份！房间已重置。"})
         return True
     
     n = len(players)
@@ -195,7 +233,8 @@ def finish_question(room_id: str, guess="", *, timed_out=False, disconnected=Fal
     player["last_guess_wrong"] = False
     if disconnected:
         q["outcome"] = "disconnected"
-        message = f"系统: 【{player['name']}】超过 {RECONNECT_GRACE_SECONDS} 秒未重连，已结束其当前提问。"
+        message = (f"系统: 【{player['name']}】已离开房间，结束其当前提问。" if player.get("left")
+                   else f"系统: 【{player['name']}】超过 {RECONNECT_GRACE_SECONDS} 秒未重连，已结束其当前提问。")
     elif timed_out:
         q["outcome"] = "timeout"
         message = f"⏭️ 【{player['name']}】{GUESS_TIMEOUT_SECONDS} 秒内未猜测，已自动跳过。"
@@ -226,6 +265,9 @@ def reconcile_room(room_id: str, now=None):
         players = [p for p in room["players"] if p["id"] in eligible_ids]
         changed = len(players) != len(room["players"])
         room["players"] = players
+        previous_host = room.get("host_id")
+        update_host(room_id, now)
+        changed = changed or previous_host != room.get("host_id")
         return changed
 
     changed = False
@@ -235,6 +277,9 @@ def reconcile_room(room_id: str, now=None):
                 and now - player.get("disconnected_at", 0) >= RECONNECT_GRACE_SECONDS):
             player["disconnect_expired"] = True
             changed = True
+    previous_host = room.get("host_id")
+    update_host(room_id, now)
+    changed = changed or previous_host != room.get("host_id")
     q = room["current_question"]
     if q and q["stage"] == "guessing" and now >= q["guess_deadline"]:
         finish_question(room_id, timed_out=True, now=now)
@@ -262,7 +307,8 @@ async def broadcast(room_id: str):
     room = rooms.get(room_id)
     if not room: return
     async with room["broadcast_lock"]:
-        await send_room_state(room_id, room)
+        if rooms.get(room_id) is room:
+            await send_room_state(room_id, room)
 
 async def send_room_state(room_id, room):
     # Build every recipient's snapshot before the first await; broadcasts are ordered.
@@ -298,7 +344,10 @@ async def send_room_state(room_id, room):
             "question_history": room.get("question_history", []),
             "events": room["events"],
             "chat_messages": room.get("chat_messages", []),
-            "library_name": room.get("library_name", "默认")
+            "library_name": room.get("library_name", "默认"),
+            "room_name": room.get("name", f"房间 {room_id}"),
+            "host_id": room.get("host_id"),
+            "max_players": room.get("max_players", DEFAULT_MAX_PLAYERS)
         }
         messages.append((conn["ws"], json.dumps(payload, ensure_ascii=False)))
     await asyncio.gather(*(send_snapshot(ws, message) for ws, message in messages))
@@ -309,13 +358,35 @@ async def send_snapshot(websocket, message):
     except (OSError, RuntimeError, WebSocketDisconnect, asyncio.TimeoutError):
         pass
 
-# 通过 Query Parameter 接收传入的角色库名
+# Lobby clients explicitly create or join; auto preserves older clients.
 @app.websocket("/ws/{room_id}/{name}")
-async def websocket_endpoint(websocket: WebSocket, room_id: str, name: str, library: str = "默认历史人物"):
+async def websocket_endpoint(websocket: WebSocket, room_id: str, name: str, library: str = "默认历史人物",
+                             mode: str = "auto", title: str = "", capacity: int = DEFAULT_MAX_PLAYERS):
     await websocket.accept()
     cleanup_inactive_rooms()
+
+    async def reject(message):
+        await websocket.send_text(json.dumps({"type": "ERROR", "message": message}, ensure_ascii=False))
+        await websocket.close(code=4000)
+
+    name = name.strip()
+    if not name or len(name) > 20 or not room_id.strip() or len(room_id) > 40:
+        await reject("昵称需要 1–20 个字，房间号需要 1–40 个字。")
+        return
+    if mode not in {"auto", "create", "join"}:
+        await reject("无效的房间操作，请返回大厅重试。")
+        return
+    if mode == "create" and room_id in rooms:
+        await reject("房间号已被占用，请重新创建房间。")
+        return
+    if mode == "join" and room_id not in rooms:
+        await reject("这个房间已解散，请选择其他房间。")
+        return
     
     if room_id not in rooms:
+        if not 2 <= capacity <= 12 or len(title.strip()) > 30:
+            await reject("房间人数应为 2–12 人，房间名称最多 30 个字。")
+            return
         # 首个进入房间的玩家决定该房间的角色库
         safe_name = os.path.basename(library)
         
@@ -326,15 +397,22 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, name: str, libr
         if not os.path.exists(lib_path):
             lib_path = os.path.join(PRESET_DIR, f"{safe_name}.json")
             
-        # 3. 如果两边都找不到，直接抛出异常退出，拒绝默默降级
+        # 3. 如果两边都找不到，明确告知玩家，不默默降级
         if not os.path.exists(lib_path):
-            raise HTTPException(status_code=404, detail=f"角色库 '{safe_name}' 不存在")
+            await reject(f"角色库 '{safe_name}' 不存在，请重新选择。")
+            return
 
         # 读取角色库内容
         with open(lib_path, "r", encoding="utf-8") as f:
             characters = json.load(f)
+        if not characters:
+            await reject("角色库为空，请选择其他角色库。")
+            return
 
         rooms[room_id] = {
+            "name": title.strip() or f"{name}的房间",
+            "max_players": capacity,
+            "host_id": None,
             "started": False, 
             "players": [], 
             "turn_index": 0, 
@@ -347,7 +425,7 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, name: str, libr
             "events": [],
             "chat_messages": [],
             "last_activity": time.time(),
-            "library_name": library,
+            "library_name": safe_name,
             "characters": characters
         }
         connections[room_id] = []
@@ -357,9 +435,11 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, name: str, libr
     touch_room(room_id)
     
     existing_player = next((p for p in room["players"] if p["name"] == name), None)
-    if room["started"] and not existing_player:
-        await websocket.send_text(json.dumps({"type": "ERROR", "message": "🚫 该房间游戏已在进行中，不允许中途加入！"}, ensure_ascii=False))
-        await websocket.close()
+    if room["started"] and (not existing_player or existing_player.get("left")):
+        await reject("该房间正在游戏中，请等待本局结束或选择其他房间。")
+        return
+    if not existing_player and len(room["players"]) >= room.get("max_players", DEFAULT_MAX_PLAYERS):
+        await reject("房间已满，请选择其他房间或自己创建。")
         return
 
     replaced_connections = []
@@ -376,6 +456,7 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, name: str, libr
         room["players"].append({"id": pid, "name": name, "target": "", "ready": False, "finished": False, "last_guess_wrong": False})
         connections[room_id].append({"ws": websocket, "id": pid, "name": name})
         room["events"].append({"content": f"系统: {name} 加入房间 (角色库: {room['library_name']})"})
+    update_host(room_id)
     
     try:
         # Register the replacement first so the old socket's finally cannot mark it offline.
@@ -407,7 +488,27 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, name: str, libr
                     await broadcast(room_id)
                 continue
             
-            if action == "SEND_CHAT":
+            if action == "LEAVE_ROOM":
+                connections[room_id] = [c for c in connections[room_id] if c["ws"] is not websocket]
+                player = next((p for p in room["players"] if p["id"] == pid), None)
+                if room["started"] and player:
+                    player["disconnected_at"] = 0
+                    player["disconnect_expired"] = True
+                    player["left"] = True
+                else:
+                    room["players"] = [p for p in room["players"] if p["id"] != pid]
+                room["events"].append({"content": f"系统: {name} 离开了房间。"})
+                if not eligible_player_ids(room_id):
+                    del rooms[room_id]
+                    del connections[room_id]
+                else:
+                    reconcile_room(room_id)
+                    update_host(room_id)
+                    await broadcast(room_id)
+                await websocket.close()
+                break
+
+            elif action == "SEND_CHAT":
                 text = data.get("text", "")
                 if isinstance(text, str):
                     text = text.strip()
@@ -427,11 +528,13 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, name: str, libr
                         room["events"].append({"content": f"系统: {name} {status}"})
             
             elif action == "START_GAME" and not room["started"]:
-                if not room["players"] or not all(
+                if pid != room.get("host_id"):
+                    continue
+                if len(room["players"]) < 2 or not all(
                     p["ready"] and p["id"] in connected_player_ids(room_id)
                     for p in room["players"]
                 ):
-                    room["events"].append({"content": "系统: 必须所有玩家都在线并点击准备后才能开始游戏！"})
+                    room["events"].append({"content": "系统: 至少需要两位玩家，且所有玩家都在线并准备后才能开始游戏！"})
                 else:
                     room["started"] = True
                     room["turn_index"] = 0

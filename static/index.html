@@ -2,41 +2,211 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>我是谁 - 游戏大厅</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        :root { --paper: #f7f7f2; --ink: #243c34; --muted: #78827b; --line: #e3e7df; --orange: #e77a50; }
+        * { box-sizing: border-box; }
+        body { margin: 0; background: var(--paper); color: var(--ink); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; }
+        button, input, select, textarea { font: inherit; }
+        button { cursor: pointer; }
+        button:disabled { cursor: not-allowed; }
+        button, input, select, textarea { -webkit-tap-highlight-color: transparent; }
+        :focus-visible { outline: 3px solid #dfa17b; outline-offset: 3px; }
+        .hidden { display: none !important; }
+        .site-header { max-width: 1184px; min-height: 98px; padding: 24px 32px; margin: auto; display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+        .brand { display: flex; align-items: center; gap: 12px; }
+        .brand-mark { display: grid; place-items: center; width: 43px; height: 43px; border-radius: 15px 15px 15px 4px; background: var(--ink); color: #fff; font-size: 29px; font-weight: 800; transform: rotate(-6deg); }
+        .brand strong { font-size: 21px; letter-spacing: 1px; }
+        .brand small { display: block; margin-top: 2px; color: var(--muted); font-size: 10px; letter-spacing: 2px; }
+        .header-note { display: flex; align-items: center; gap: 8px; color: #6c7d70; font-size: 12px; }
+        .live-dot { width: 7px; height: 7px; border-radius: 50%; background: #88a989; box-shadow: 0 0 0 4px #e7ede1; }
+        #login-screen { max-width: 1184px; padding: 20px 32px 56px; margin: auto; }
+        .lobby-hero { display: flex; justify-content: space-between; align-items: center; min-height: 232px; padding: 20px 0 42px; gap: 24px; }
+        .eyebrow { color: #8c957f; letter-spacing: 2px; font-size: 10px; font-weight: 700; margin: 0 0 18px; }
+        .lobby-hero h1 { font-size: clamp(30px, 4vw, 44px); font-weight: 750; line-height: 1.3; letter-spacing: -1px; margin: 0 0 14px; }
+        .lobby-hero h1 span { color: var(--orange); }
+        .lobby-hero p:last-child { color: var(--muted); font-size: 14px; line-height: 1.8; margin: 0; }
+        .hero-cards { position: relative; width: 294px; height: 172px; flex-shrink: 0; margin-right: 38px; }
+        .hero-card { position: absolute; width: 112px; height: 145px; border: 5px solid white; border-radius: 19px; box-shadow: 0 10px 24px #283c3410; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 7px; }
+        .hero-card b { font-size: 49px; line-height: 1; }
+        .hero-card span { font-size: 10px; letter-spacing: 2px; }
+        .hero-card:first-child { background: #e4e9d5; left: 6px; top: 13px; transform: rotate(-17deg); color: #607958; }
+        .hero-card:nth-child(2) { background: #f7dfc6; left: 93px; top: 0; transform: rotate(-2deg); color: #b17b4c; }
+        .hero-card:nth-child(3) { background: #cddedb; left: 174px; top: 19px; transform: rotate(16deg); color: #537a70; }
+        .hero-spark { position: absolute; right: -31px; top: -8px; color: #d69a62; font-size: 26px; }
+        .lobby-layout { display: grid; grid-template-columns: minmax(0, 1fr) 260px; gap: 28px; align-items: start; }
+        .rooms-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 0 0 20px; }
+        .rooms-heading h2 { font-size: 21px; margin: 0; font-weight: 700; }
+        .rooms-heading h2 small { font-size: 12px; font-weight: 400; margin-left: 10px; color: var(--muted); }
+        .text-button { border: 0; background: transparent; color: #6f7b72; padding: 6px 0; font-size: 12px; }
+        .text-button:hover { color: var(--ink); }
+        .room-filters { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding-bottom: 17px; border-bottom: 1px solid var(--line); margin-bottom: 20px; }
+        .filter-tabs { display: flex; gap: 5px; }
+        .filter-tab { border: 0; border-radius: 8px; background: transparent; color: #7c857d; font-size: 12px; padding: 9px 13px; white-space: nowrap; }
+        .filter-tab[aria-pressed="true"] { color: var(--ink); background: #e7ecdf; font-weight: 700; }
+        .room-search { background: #fff; border: 1px solid var(--line); border-radius: 9px; padding: 9px 12px; font-size: 12px; width: 190px; color: var(--ink); min-width: 0; }
+        .room-search::placeholder { color: #9ca59b; }
+        .room-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+        .room-card { background: #fff; border: 1px solid var(--line); border-radius: 15px; padding: 20px; min-width: 0; transition: border-color .2s, box-shadow .2s; }
+        .room-card:hover { border-color: #bccbb9; box-shadow: 0 6px 20px #243c3406; }
+        .room-card-top { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 15px; }
+        .room-symbol { width: 36px; height: 36px; border-radius: 11px; display: grid; place-items: center; background: #edf1e6; color: #7a8b64; font-size: 21px; font-weight: 700; }
+        .room-card:nth-child(3n+2) .room-symbol { background: #fbede2; color: #ce9162; }
+        .room-card:nth-child(3n) .room-symbol { background: #e7efed; color: #7a9c90; }
+        .room-state { color: #527951; background: #eef4e9; padding: 5px 8px; border-radius: 5px; font-size: 10px; white-space: nowrap; }
+        .room-state.playing { background: #fff0e3; color: #b77e4f; }
+        .room-state.full { background: #f0f1ef; color: #8a9188; }
+        .room-card h3 { font-size: 16px; font-weight: 650; margin: 0 0 6px; overflow-wrap: anywhere; }
+        .room-code { font-size: 10px; letter-spacing: .7px; color: #9aa096; margin: 0 0 17px; overflow-wrap: anywhere; }
+        .room-details { font-size: 11px; color: #8a9388; display: flex; flex-direction: column; gap: 7px; padding-bottom: 16px; border-bottom: 1px dashed var(--line); }
+        .room-details span { overflow-wrap: anywhere; }
+        .room-details b { color: #596c5b; font-weight: 500; margin-left: 8px; }
+        .room-card-bottom { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-top: 16px; }
+        .room-population { display: flex; gap: 3px; margin-bottom: 5px; }
+        .room-population i { display: block; width: 7px; height: 7px; border-radius: 50%; background: #e6eae1; }
+        .room-population i.occupied { background: #879f7b; }
+        .room-card-bottom small { color: #86907f; font-size: 10px; }
+        .room-join { border: 1px solid #dce5d4; color: #5c7650; background: #f2f6ec; font-size: 11px; font-weight: 650; border-radius: 7px; padding: 9px 12px; }
+        .room-join:hover:enabled { background: #e4eddc; }
+        .room-join:disabled { color: #a0a59c; border-color: #eceee8; background: #f7f8f5; }
+        .lobby-empty { background: #fff; border: 1px dashed #d6ddcd; border-radius: 15px; padding: 46px 24px; text-align: center; }
+        .empty-symbol { display: grid; place-items: center; margin: 0 auto 18px; width: 55px; height: 55px; background: #f0f3e8; border-radius: 17px; color: #8fa17d; font-size: 32px; }
+        .lobby-empty h3 { font-size: 17px; margin: 0 0 9px; }
+        .lobby-empty p { font-size: 12px; color: var(--muted); margin: 0 0 20px; line-height: 1.8; }
+        .lobby-empty .primary-button { padding: 10px 18px; font-size: 12px; }
+        .lobby-update { color: #8c9689; font-size: 10px; margin: 17px 0 0; display: flex; gap: 6px; align-items: center; }
+        .lobby-update::before { content: ''; width: 5px; height: 5px; background: #a5b79a; border-radius: 50%; }
+        .lobby-sidebar { display: flex; flex-direction: column; gap: 18px; }
+        .create-panel { background: #2c493e; border-radius: 17px; padding: 25px; color: #fff; position: relative; overflow: hidden; }
+        .create-panel::after { content: '?'; position: absolute; right: -5px; top: -32px; font-size: 150px; font-weight: 800; color: #ffffff06; transform: rotate(16deg); pointer-events: none; }
+        .create-panel .eyebrow { color: #afc4ac; margin-bottom: 27px; font-size: 9px; }
+        .create-panel h2 { font-size: 23px; line-height: 1.6; font-weight: 600; margin: 0 0 12px; }
+        .create-panel p { font-size: 11px; color: #bed0bf; line-height: 1.9; margin: 0 0 24px; }
+        .primary-button { border: 0; background: var(--orange); color: white; border-radius: 9px; padding: 13px 18px; font-size: 13px; font-weight: 650; transition: background .2s; }
+        .primary-button:hover:enabled { background: #d96940; }
+        .primary-button:disabled { opacity: .55; }
+        .create-panel .primary-button { width: 100%; display: flex; align-items: center; justify-content: space-between; }
+        .guide-panel { padding: 21px; background: #eeefe7; border-radius: 15px; }
+        .guide-panel h3 { margin: 0 0 19px; font-size: 13px; font-weight: 650; }
+        .guide-step { display: flex; align-items: flex-start; gap: 11px; margin-top: 16px; }
+        .guide-step > span { font-size: 10px; color: #95a087; padding-top: 2px; }
+        .guide-step strong { font-size: 11px; font-weight: 600; display: block; margin-bottom: 5px; }
+        .guide-step p { margin: 0; font-size: 10px; line-height: 1.8; color: #8b9483; }
+        .library-link { color: #818b7a; text-align: center; font-size: 11px; border: 0; background: transparent; padding: 3px; }
+        .library-link:hover { color: var(--ink); }
+        .site-footer { text-align: center; color: #a2aa9b; font-size: 10px; letter-spacing: 1px; padding: 20px 20px 30px; }
+        .notice { background: #fff0e7; color: #a95e3f; border: 1px solid #eed5c6; border-radius: 9px; font-size: 12px; line-height: 1.7; padding: 10px 14px; margin: 0 0 18px; }
+        #connection-status { max-width: 600px; margin: 0 auto; padding: 0 20px; font-size: 12px; color: var(--muted); }
+        #game-screen { max-width: 600px; margin: 16px auto 32px; padding: 24px; border: 1px solid var(--line); background: white; border-radius: 19px; }
+        .room-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding-bottom: 15px; border-bottom: 1px solid var(--line); margin-bottom: 15px; }
+        .room-toolbar .text-button { font-size: 12px; }
+        .room-phase { font-size: 11px; color: #7b8c6c; }
+        #waiting-room-tip { font-size: 12px; color: #7c8974; line-height: 1.8; text-align: center; }
+        #room-title { overflow-wrap: anywhere; }
+        .room-heading { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 12px; padding-bottom: 15px; border-bottom: 1px solid var(--line); }
+        .room-heading h2 { display: block; font-size: 18px; line-height: 1.5; font-weight: 650; margin: 0 0 6px; color: var(--ink); }
+        #room-lib-badge { display: inline-block; max-width: 100%; padding: 3px 8px; border-radius: 6px; background: #eef1e6; color: #77876a; font-size: 10px; overflow-wrap: anywhere; }
+        #player-count { white-space: nowrap; font-size: 11px; background: #f0f3eb; color: #7e8b72; border-radius: 8px; padding: 5px 9px; }
+        #ready-btn { background: var(--orange); box-shadow: none; }
+        #ready-btn[aria-pressed="true"] { background: #edf1e5; color: #6c805b; }
+        #start-btn { background: #2c493e; box-shadow: none; }
+        #start-btn:disabled { background: #e9ede3; color: #98a38e; opacity: 1; }
+        #game-screen input { min-width: 0; }
+        .modal { border: 1px solid var(--line); border-radius: 20px; background: #fffefa; color: var(--ink); padding: 28px; width: min(440px, calc(100% - 32px)); max-height: calc(100dvh - 40px); overflow-y: auto; }
+        .modal::backdrop { background: #243c3470; backdrop-filter: blur(4px); }
+        .modal-heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; gap: 12px; }
+        .modal-heading h2 { font-size: 23px; font-weight: 650; margin: 0; }
+        .modal-close { border: 0; background: #eff1e8; color: #7c8974; border-radius: 50%; width: 29px; height: 29px; font-size: 20px; display: grid; place-items: center; }
+        .modal-description { margin: 0 0 24px; font-size: 12px; line-height: 1.8; color: var(--muted); }
+        .field { display: block; margin-top: 17px; font-size: 12px; font-weight: 550; }
+        .field input, .field select, .field textarea { display: block; width: 100%; border: 1px solid #dce1d4; border-radius: 9px; padding: 12px; background: #fff; margin-top: 8px; font-size: 13px; font-weight: 400; color: var(--ink); }
+        .field-row { display: grid; grid-template-columns: minmax(0, 1fr) 100px; gap: 12px; }
+        .modal-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 25px; }
+        .modal-footer .primary-button { flex: 1; }
+        .modal-hint { margin: 15px 0 0; color: #99a18f; font-size: 10px; text-align: center; line-height: 1.8; }
+        .entry-error { color: #b16748; font-size: 12px; line-height: 1.7; margin-top: 16px; }
+        @media (max-width: 940px) { .lobby-layout { grid-template-columns: minmax(0, 1fr) 230px; gap: 22px; } .room-grid { grid-template-columns: minmax(0, 1fr); } .hero-cards { margin-right: 10px; transform: scale(.85); transform-origin: right center; width: 260px; } }
+        @media (max-width: 640px) {
+            .site-header { min-height: 80px; padding: 18px 20px; } .header-note { font-size: 10px; } .brand-mark { width: 35px; height: 35px; font-size: 25px; } .brand strong { font-size: 18px; } .brand small { font-size: 8px; }
+            #login-screen { padding: 4px 20px 28px; } .lobby-hero { min-height: auto; padding: 24px 0 32px; position: relative; } .lobby-hero h1 { font-size: 32px; } .lobby-hero p:last-child { font-size: 12px; max-width: 225px; } .eyebrow { font-size: 8px; margin-bottom: 14px; }
+            .hero-cards { width: 82px; height: 150px; margin: 0; position: absolute; right: 0; top: 27px; transform: scale(.46); transform-origin: right center; opacity: .8; } .hero-card:first-child { left: -206px; } .hero-card:nth-child(2) { left: -119px; } .hero-card:nth-child(3) { left: -38px; } .hero-spark { right: -20px; }
+            .lobby-layout { display: flex; flex-direction: column; gap: 24px; } .lobby-sidebar { width: 100%; order: -1; } .create-panel { padding: 17px 19px; display: flex; align-items: center; justify-content: space-between; gap: 10px; border-radius: 12px; } .create-panel h2 { font-size: 14px; margin: 0; } .create-panel h2 br { display: none; } .create-panel p { font-size: 10px; margin: 4px 0 0; } .create-panel .eyebrow, .guide-panel, .lobby-sidebar > .library-link { display: none; } .create-panel .primary-button { width: auto; white-space: nowrap; font-size: 12px; padding: 12px 16px; gap: 16px; }
+            .rooms-main { width: 100%; } .rooms-heading h2 { font-size: 19px; } .rooms-heading h2 small { display: block; margin: 6px 0 0; font-size: 10px; } .room-filters { flex-wrap: wrap; gap: 14px; } .room-search { flex: 1; width: 130px; } .filter-tab { padding: 8px 10px; font-size: 11px; } .room-card { padding: 18px; }
+            #game-screen { margin: 12px 12px 24px; padding: 17px; } .modal { padding: 23px; } .modal-heading h2 { font-size: 21px; }
+        }
+        @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+    </style>
 </head>
-<body class="bg-gray-100 min-h-screen flex flex-col justify-between p-3 sm:p-4">
-    <div class="max-w-md w-full mx-auto bg-white p-4 sm:p-6 rounded-2xl shadow-lg my-auto">
-        <!-- 登录界面 -->
+<body>
+    <header class="site-header">
+        <div class="brand"><span class="brand-mark" aria-hidden="true">?</span><div><strong>我是谁</strong><small>WHO AM I</small></div></div>
+        <span class="header-note"><i class="live-dot" aria-hidden="true"></i> 和朋友一起，猜个痛快</span>
+    </header>
+    <main>
         <div id="login-screen">
-            <h1 class="text-2xl font-bold mb-4 text-center text-gray-800">我是谁</h1>
-            <div class="space-y-3">
-                <input id="room-id" class="w-full border border-gray-300 p-3 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="请输入房间号 (如 888)">
-                <input id="user-name" class="w-full border border-gray-300 p-3 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="请输入你的名字">
-                
-                <!-- 新增：角色库选择与管理区域 -->
-                <div class="flex gap-2">
-                    <select id="library-select" class="flex-1 border border-gray-300 p-3 rounded-xl text-base bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
-                        <option value="默认历史人物">加载中...</option>
-                    </select>
-                    <button onclick="openLibraryManager()" class="bg-indigo-100 text-indigo-700 hover:bg-indigo-200 px-4 py-3 rounded-xl font-bold text-sm transition">管理角色库</button>
+            <section class="lobby-hero" aria-labelledby="lobby-title">
+                <div>
+                    <p class="eyebrow">THE GUESSING CLUB / 身份猜测俱乐部</p>
+                    <h1 id="lobby-title">好奇心就位，<br>就差一个<span>你。</span></h1>
+                    <p>加入一桌有趣的人，用一个个问题，<br>拼出藏在你身上的那个名字。</p>
                 </div>
-
-                <button onclick="connect()" class="w-full bg-blue-500 hover:bg-blue-600 text-white p-3 rounded-xl font-bold text-base transition shadow-md">进入房间</button>
-                <p class="text-xs text-gray-400 text-center mt-2">注: 房间角色库由首个创建房间的玩家决定</p>
+                <div class="hero-cards" aria-hidden="true"><div class="hero-card"><b>?</b><span>我是谁</span></div><div class="hero-card"><b>?</b><span>你来猜</span></div><div class="hero-card"><b>?</b><span>一起玩</span></div><span class="hero-spark">✳</span></div>
+            </section>
+            <p id="lobby-error" class="notice hidden" role="alert"></p>
+            <div class="lobby-layout">
+                <section class="rooms-main" aria-labelledby="rooms-title">
+                    <div class="rooms-heading">
+                        <h2 id="rooms-title">游戏大厅<small id="lobby-summary">正在寻找有趣的房间…</small></h2>
+                        <button class="text-button" onclick="openJoinRoom()">用房间号加入 ↗</button>
+                    </div>
+                    <div class="room-filters">
+                        <div class="filter-tabs" role="group" aria-label="筛选房间">
+                            <button id="filter-all" class="filter-tab" aria-pressed="true" onclick="setRoomFilter('all')">全部房间</button>
+                            <button id="filter-waiting" class="filter-tab" aria-pressed="false" onclick="setRoomFilter('waiting')">可加入</button>
+                            <button id="filter-playing" class="filter-tab" aria-pressed="false" onclick="setRoomFilter('playing')">游戏中</button>
+                        </div>
+                        <input id="room-search" class="room-search" type="search" aria-label="搜索房间" placeholder="搜索房间名 / 房间号" oninput="renderRooms()">
+                    </div>
+                    <div id="rooms-list" class="room-grid" aria-label="房间列表" aria-busy="true"></div>
+                    <div id="lobby-empty" class="lobby-empty" role="status">
+                        <span class="empty-symbol" aria-hidden="true">?</span>
+                        <h3 id="empty-title">正在寻找房间</h3>
+                        <p id="empty-description">稍等一下，好玩的事情马上开始。</p>
+                        <button class="primary-button" onclick="openCreateRoom()">＋ 创建第一个房间</button>
+                    </div>
+                    <div class="rooms-heading" style="margin: 14px 0 0">
+                        <p id="lobby-update" class="lobby-update" role="status">房间列表每 5 秒自动更新</p>
+                        <button id="refresh-rooms" class="text-button" onclick="refreshRooms()">↻ 刷新</button>
+                    </div>
+                </section>
+                <aside class="lobby-sidebar">
+                    <div class="create-panel">
+                        <div><p class="eyebrow">YOUR TABLE, YOUR RULES</p><h2>开一局，<br>认识另一个你。</h2><p>选个角色库，叫上朋友就开玩。</p></div>
+                        <button class="primary-button" onclick="openCreateRoom()"><span>＋ 创建房间</span><span aria-hidden="true">↗</span></button>
+                    </div>
+                    <div class="guide-panel">
+                        <h3>第一次来？这样玩</h3>
+                        <div class="guide-step"><span>01</span><div><strong>入座，准备出发</strong><p>加入房间，准备好后由房主开局。</p></div></div>
+                        <div class="guide-step"><span>02</span><div><strong>大家知道，只有你不知道</strong><p>每人获得一个身份，你只能看到别人的。</p></div></div>
+                        <div class="guide-step"><span>03</span><div><strong>大胆提问，一点点猜</strong><p>轮流提问，收集「是」与「否」的线索，猜出你是谁。</p></div></div>
+                    </div>
+                    <button class="library-link" onclick="openLibraryManager()">角色库管理 · 自定义你的脑洞 ↗</button>
+                </aside>
             </div>
         </div>
-        <p id="connection-status" role="status" class="text-xs text-gray-500 mt-2"></p>
+        <p id="connection-status" role="status"></p>
 
-        <!-- 游戏界面 (保持不变的主体结构) -->
+        <!-- 房间等待与游戏界面 -->
         <div id="game-screen" class="hidden space-y-4">
-            <div class="flex justify-between items-center border-b pb-2">
+            <div class="room-toolbar"><button id="leave-btn" class="text-button" onclick="requestLeave()">← 返回大厅</button><span id="room-phase" class="room-phase">等待开始</span></div>
+            <div class="room-heading">
                 <div>
-                    <h2 id="room-title" class="font-bold text-lg text-blue-600 inline"></h2>
-                    <span id="room-lib-badge" class="ml-2 text-[10px] bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded-full align-middle"></span>
+                    <h2 id="room-title"></h2>
+                    <span id="room-lib-badge"></span>
                 </div>
-                <span id="player-count" class="text-xs bg-gray-100 text-gray-600 px-2.5 py-1 rounded-full font-medium"></span>
+                <span id="player-count"></span>
             </div>
             
             <div id="target-card" class="bg-yellow-50 border border-yellow-300 p-3 rounded-xl text-center shadow-sm hidden">
@@ -51,8 +221,9 @@
             </div>
 
             <div id="pre-game-actions" class="space-y-3">
-                <button onclick="toggleReady()" id="ready-btn" class="w-full bg-yellow-500 hover:bg-yellow-600 text-white p-3 rounded-xl font-bold text-base transition shadow-md">点击准备 🟢</button>
-                <button onclick="startGame()" id="start-btn" class="w-full bg-green-500 hover:bg-green-600 text-white p-3 rounded-xl font-bold text-base transition shadow-md opacity-50 cursor-not-allowed" disabled>开始游戏 (需全员准备)</button>
+                <button onclick="toggleReady()" id="ready-btn" aria-pressed="false" class="w-full text-white p-3 rounded-xl font-bold text-base transition">我准备好了</button>
+                <button onclick="startGame()" id="start-btn" class="w-full bg-green-500 hover:bg-green-600 text-white p-3 rounded-xl font-bold text-base transition shadow-md opacity-50 cursor-not-allowed" disabled>开始游戏</button>
+                <p id="waiting-room-tip"></p>
             </div>
 
             <!-- 以下游戏核心操作区保持原样 -->
@@ -121,14 +292,48 @@
                 </div>
             </div>
         </div>
-    </div>
+    </main>
+    <footer class="site-footer">一个问题，一条线索，一个意想不到的你。</footer>
+
+    <dialog id="create-modal" class="modal" aria-labelledby="create-title">
+        <form onsubmit="event.preventDefault(); createRoom()">
+            <div class="modal-heading"><h2 id="create-title">创建一间新房间</h2><button type="button" class="modal-close" aria-label="关闭" onclick="closeEntryDialogs()">×</button></div>
+            <p class="modal-description">当一回房主，邀请朋友来你的桌边。</p>
+            <label class="field" for="user-name">你的昵称<input id="user-name" maxlength="20" required autocomplete="nickname" placeholder="大家该怎么称呼你？"></label>
+            <label class="field" for="room-name">房间名称<input id="room-name" maxlength="30" placeholder="留空则使用「你的昵称的房间」"></label>
+            <div class="field-row">
+                <label class="field" for="library-select">本局角色库<select id="library-select" required><option value="">加载中…</option></select></label>
+                <label class="field" for="room-capacity">房间人数<select id="room-capacity"><option value="4">4 人</option><option value="6">6 人</option><option value="8" selected>8 人</option><option value="12">12 人</option></select></label>
+            </div>
+            <p id="create-error" class="entry-error" role="alert"></p>
+            <div class="modal-footer"><button type="button" class="text-button" onclick="openLibraryManager()">管理角色库 ↗</button><button id="create-submit" class="primary-button" type="submit">创建并进入 →</button></div>
+            <p class="modal-hint">房间号自动生成 · 至少 2 人即可开始</p>
+        </form>
+    </dialog>
+
+    <dialog id="join-modal" class="modal" aria-labelledby="join-title">
+        <form onsubmit="event.preventDefault(); joinSelectedRoom()">
+            <div class="modal-heading"><h2 id="join-title">加入房间</h2><button type="button" class="modal-close" aria-label="关闭" onclick="closeEntryDialogs()">×</button></div>
+            <p id="join-description" class="modal-description">输入朋友分享的房间号，一起入座。</p>
+            <label class="field" for="room-id">房间号<input id="room-id" maxlength="40" required autocomplete="off" placeholder="输入房间号"></label>
+            <label class="field" for="join-user-name">你的昵称<input id="join-user-name" maxlength="20" required autocomplete="nickname" placeholder="大家该怎么称呼你？"></label>
+            <p id="join-error" class="entry-error" role="alert"></p>
+            <div class="modal-footer"><button id="join-submit" class="primary-button" type="submit">进入房间 →</button></div>
+        </form>
+    </dialog>
+
+    <dialog id="leave-modal" class="modal" aria-labelledby="leave-title">
+        <div class="modal-heading"><h2 id="leave-title">要离开这一局吗？</h2></div>
+        <p class="modal-description">离开后将退出本局游戏，其他玩家会继续。你可以回到大厅加入新的房间。</p>
+        <div class="modal-footer"><button class="text-button" onclick="document.getElementById('leave-modal').close()">继续游戏</button><button class="primary-button" onclick="leaveRoom()">离开房间</button></div>
+    </dialog>
 
     <!-- 角色库管理 Modal 弹窗 -->
-    <div id="library-modal" class="hidden fixed inset-0 bg-black bg-opacity-60 z-50 flex justify-center items-center p-4">
-        <div class="bg-white rounded-2xl w-full max-w-md p-5 space-y-4">
+    <dialog id="library-modal" class="modal" aria-labelledby="library-title">
+        <div class="space-y-4">
             <div class="flex justify-between items-center border-b pb-3">
-                <h2 class="text-lg font-bold text-gray-800">角色库管理</h2>
-                <button onclick="closeLibraryManager()" class="text-gray-500 hover:text-gray-800 font-bold text-xl">&times;</button>
+                <h2 id="library-title" class="text-lg font-bold text-gray-800">角色库管理</h2>
+                <button onclick="closeLibraryManager()" aria-label="关闭角色库管理" class="modal-close">&times;</button>
             </div>
             
             <div class="space-y-3">
@@ -153,7 +358,7 @@
                 <button onclick="saveLibrary()" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white p-3 rounded-xl font-bold text-sm transition">保存角色库</button>
             </div>
         </div>
-    </div>
+    </dialog>
 
     <script>
         let ws;
@@ -169,17 +374,171 @@
         let reconnectAttempts = 0;
         let currentState;
         let countdownDeadline = null;
+        let lobbyRooms = [];
+        let lobbyFilter = 'all';
+        let lobbyLoading = false;
+        let entryPending = false;
+
+        function escapeHtml(value) {
+            return String(value ?? '').replace(/[&<>"']/g, char => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[char]));
+        }
+
+        function showLobbyError(message) {
+            const notice = document.getElementById('lobby-error');
+            notice.textContent = message;
+            notice.classList.toggle('hidden', !message);
+        }
+
+        async function refreshRooms() {
+            if (lobbyLoading) return;
+            lobbyLoading = true;
+            document.getElementById('refresh-rooms').disabled = true;
+            document.getElementById('rooms-list').setAttribute('aria-busy', 'true');
+            try {
+                const response = await fetch('/api/rooms', {cache: 'no-store'});
+                if (!response.ok) throw new Error('无法获取房间列表');
+                const data = await response.json();
+                lobbyRooms = data.rooms;
+                renderRooms();
+                document.getElementById('lobby-update').textContent = '已更新 · 每 5 秒自动刷新';
+            } catch (error) {
+                document.getElementById('lobby-update').textContent = '更新失败，稍后自动重试，也可以点击刷新';
+                if (!lobbyRooms.length) {
+                    document.getElementById('empty-title').textContent = '暂时连接不上大厅';
+                    document.getElementById('empty-description').textContent = '检查网络后点击刷新，房间会在这里等你。';
+                }
+            } finally {
+                lobbyLoading = false;
+                document.getElementById('refresh-rooms').disabled = false;
+                document.getElementById('rooms-list').setAttribute('aria-busy', 'false');
+            }
+        }
+
+        function setRoomFilter(filter) {
+            lobbyFilter = filter;
+            for (const value of ['all', 'waiting', 'playing']) {
+                document.getElementById(`filter-${value}`).setAttribute('aria-pressed', String(value === filter));
+            }
+            renderRooms();
+        }
+
+        function renderRooms() {
+            const search = document.getElementById('room-search').value.trim().toLocaleLowerCase();
+            const visibleRooms = lobbyRooms.filter(room => {
+                const matchesFilter = lobbyFilter === 'all' || (lobbyFilter === 'waiting' ? room.joinable : room.started);
+                return matchesFilter && [room.id, room.name, room.library_name, room.host_name]
+                    .some(value => String(value).toLocaleLowerCase().includes(search));
+            });
+            document.getElementById('lobby-summary').textContent = `${lobbyRooms.length} 个房间 · ${lobbyRooms.reduce((total, room) => total + room.online_count, 0)} 位玩家在线`;
+            document.getElementById('rooms-list').innerHTML = visibleRooms.map(room => {
+                const stateClass = room.started ? 'playing' : room.joinable ? '' : 'full';
+                const stateLabel = room.started ? '游戏进行中' : room.joinable ? '等待加入' : '房间已满';
+                const seats = Array.from({length: Math.min(room.max_players, 8)}, (_, index) => `<i class="${index < room.player_count ? 'occupied' : ''}"></i>`).join('');
+                return `<article class="room-card">
+                    <div class="room-card-top"><span class="room-symbol" aria-hidden="true">?</span><span class="room-state ${stateClass}">${stateLabel}</span></div>
+                    <h3>${escapeHtml(room.name)}</h3><p class="room-code">ROOM / ${escapeHtml(room.id)}</p>
+                    <div class="room-details"><span>角色库<b>${escapeHtml(room.library_name)}</b></span><span>房主<b>${escapeHtml(room.host_name)}</b></span></div>
+                    <div class="room-card-bottom"><div><div class="room-population" aria-hidden="true">${seats}</div><small>${room.player_count} / ${room.max_players} 人 · ${room.online_count} 人在线</small></div>
+                    <button class="room-join" data-room-id="${escapeHtml(room.id)}" onclick="openJoinRoom(this.dataset.roomId)" ${!room.joinable ? 'disabled' : ''} aria-label="${escapeHtml(stateLabel + '：' + room.name)}">${room.joinable ? '加入房间 ↗' : room.started ? '本局已开始' : '暂时满员'}</button></div>
+                </article>`;
+            }).join('');
+            document.getElementById('lobby-empty').classList.toggle('hidden', visibleRooms.length > 0);
+            document.getElementById('empty-title').textContent = lobbyRooms.length ? '没有找到匹配的房间' : '大厅还很安静';
+            document.getElementById('empty-description').textContent = lobbyRooms.length ? '换个关键词或筛选条件，也可以自己开一桌。' : '成为第一个开桌的人，邀请朋友一起猜猜看。';
+            document.querySelector('#lobby-empty button').textContent = lobbyRooms.length ? '＋ 创建新房间' : '＋ 创建第一个房间';
+        }
+
+        function savedName() {
+            try { return localStorage.getItem('whoami-name') || ''; } catch { return ''; }
+        }
+
+        function setEntryPending(pending) {
+            entryPending = pending;
+            document.getElementById('create-submit').disabled = pending;
+            document.getElementById('join-submit').disabled = pending;
+            document.getElementById('create-submit').textContent = pending ? '正在进入…' : '创建并进入 →';
+            document.getElementById('join-submit').textContent = pending ? '正在进入…' : '进入房间 →';
+        }
+
+        function closeEntryDialogs() {
+            for (const id of ['create-modal', 'join-modal']) document.getElementById(id).close();
+            if (entryPending) leaveRoom();
+        }
+
+        function openCreateRoom() {
+            if (entryPending || shouldReconnect) return;
+            document.getElementById('user-name').value = savedName();
+            document.getElementById('create-error').textContent = '';
+            document.getElementById('create-modal').showModal();
+            if (!document.getElementById('library-select').value) fetchLibraries();
+        }
+
+        function openJoinRoom(roomId = '') {
+            if (entryPending || shouldReconnect) return;
+            const room = lobbyRooms.find(room => room.id === roomId);
+            document.getElementById('room-id').value = roomId;
+            document.getElementById('join-user-name').value = savedName();
+            document.getElementById('join-description').textContent = room
+                ? `${room.name} · ${room.library_name} · ${room.player_count}/${room.max_players} 人` : '输入朋友分享的房间号，一起入座。';
+            document.getElementById('join-error').textContent = '';
+            document.getElementById('join-modal').showModal();
+        }
+
+        function joinSelectedRoom() {
+            document.getElementById('user-name').value = document.getElementById('join-user-name').value.trim();
+            connect();
+        }
+
+        function createRoom() {
+            document.getElementById('room-id').value = String(100000 + Math.floor(Math.random() * 900000));
+            connect('create');
+        }
+
+        function requestLeave() {
+            if (currentState?.started) document.getElementById('leave-modal').showModal();
+            else leaveRoom();
+        }
+
+        function leaveRoom() {
+            if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({action: 'LEAVE_ROOM'}));
+            returnToLobby();
+        }
+
+        function returnToLobby(message = '') {
+            shouldReconnect = false;
+            clearTimeout(reconnectTimer);
+            clearTimeout(connectTimeout);
+            clearInterval(heartbeatTimer);
+            countdownDeadline = null;
+            currentState = null;
+            const oldSocket = ws;
+            ws = null;
+            oldSocket?.close();
+            setEntryPending(false);
+            document.getElementById('game-screen').classList.add('hidden');
+            document.getElementById('login-screen').classList.remove('hidden');
+            document.getElementById('leave-modal').close();
+            setConnectionStatus(message);
+            showLobbyError(message);
+            document.getElementById('join-error').textContent = message;
+            document.getElementById('create-error').textContent = message;
+            document.getElementById('question').value = '';
+            document.getElementById('guess-input').value = '';
+            document.getElementById('chat-input').value = '';
+            refreshRooms();
+        }
 
         function setConnectionStatus(message, ready = false) {
             connectionReady = ready;
             document.getElementById('connection-status').textContent = message;
-            document.querySelectorAll('#game-screen button, #game-screen input').forEach(control => {
+            document.querySelectorAll('#game-screen button:not(#leave-btn), #game-screen input').forEach(control => {
                 control.disabled = !ready || (control.id === 'start-btn' && !canStartGame());
             });
         }
 
         function canStartGame() {
-            return currentState && currentState.players.length > 0
+            return currentState && currentState.players.some(p => p.isMe && p.id === currentState.host_id)
+                && currentState.players.length >= 2
                 && currentState.players.every(p => p.ready && p.connected);
         }
 
@@ -195,27 +554,32 @@
         async function fetchLibraries() {
             try {
                 const res = await fetch('/api/libraries');
+                if (!res.ok) throw new Error('获取角色库失败');
                 const data = await res.json();
                 const sel = document.getElementById('library-select');
                 const modalSel = document.getElementById('modal-lib-select');
                 
-                let optionsHtml = data.libraries.map(lib => `<option value="${lib}">${lib}</option>`).join('');
+                const selected = sel.value;
+                let optionsHtml = data.libraries.sort().map(lib => `<option value="${escapeHtml(lib)}">${escapeHtml(lib)}</option>`).join('');
                 sel.innerHTML = optionsHtml;
+                if (data.libraries.includes(selected)) sel.value = selected;
+                else if (data.libraries.includes('默认历史人物')) sel.value = '默认历史人物';
                 modalSel.innerHTML = '<option value="">-- 新建角色库 --</option>' + optionsHtml;
             } catch (e) {
                 console.error('获取角色库失败', e);
+                document.getElementById('create-error').textContent = '角色库加载失败，请刷新页面后重试。';
             }
         }
 
         function openLibraryManager() {
-            document.getElementById('library-modal').classList.remove('hidden');
+            document.getElementById('library-modal').showModal();
             document.getElementById('lib-name').value = '';
             document.getElementById('lib-content').value = '';
             document.getElementById('modal-lib-select').value = '';
         }
 
         function closeLibraryManager() {
-            document.getElementById('library-modal').classList.add('hidden');
+            document.getElementById('library-modal').close();
         }
 
         async function loadLibraryDetail() {
@@ -262,17 +626,42 @@
             }
         }
 
-        // 初始化加载角色库列表
-        window.addEventListener('DOMContentLoaded', fetchLibraries);
+        window.addEventListener('DOMContentLoaded', () => {
+            fetchLibraries();
+            refreshRooms();
+            setInterval(() => {
+                if (!shouldReconnect && document.visibilityState !== 'hidden') refreshRooms();
+            }, 5000);
+            for (const id of ['create-modal', 'join-modal']) {
+                document.getElementById(id).addEventListener('cancel', () => {
+                    if (entryPending) leaveRoom();
+                });
+            }
+        });
 
         // --- 原有游戏连接与操作逻辑 ---
-        function connect() {
+        function connect(mode = 'join') {
+            if (entryPending) return;
             const room = document.getElementById('room-id').value.trim();
             const name = document.getElementById('user-name').value.trim();
             const library = document.getElementById('library-select').value;
             
-            if (!room || !name) return alert('请完整填写房间号和名字！');
-            connectionDetails = {room, name, library};
+            if (!room || !name) {
+                document.getElementById(mode === 'create' ? 'create-error' : 'join-error').textContent = '请填写昵称和房间号，不能只输入空格。';
+                return;
+            }
+            if (mode === 'create' && !library) {
+                document.getElementById('create-error').textContent = '请先选择一个角色库。';
+                return;
+            }
+            connectionDetails = {room, name, library, mode,
+                title: document.getElementById('room-name').value.trim(),
+                capacity: document.getElementById('room-capacity').value || '8'};
+            try { localStorage.setItem('whoami-name', name); } catch {}
+            showLobbyError('');
+            document.getElementById('create-error').textContent = '';
+            document.getElementById('join-error').textContent = '';
+            setEntryPending(true);
             shouldReconnect = true;
             reconnectAttempts = 0;
             currentState = null;
@@ -291,9 +680,10 @@
                 oldSocket.close();
             }
             setConnectionStatus('连接恢复中，正在同步房间…');
-            const {room, name, library} = connectionDetails;
+            const {room, name, library, mode, title, capacity} = connectionDetails;
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            const socket = new WebSocket(`${protocol}//${window.location.host}/ws/${encodeURIComponent(room)}/${encodeURIComponent(name)}?library=${encodeURIComponent(library)}`);
+            const socket = new WebSocket(`${protocol}//${window.location.host}/ws/${encodeURIComponent(room)}/${encodeURIComponent(name)}?library=${encodeURIComponent(library)}&mode=${mode}&title=${encodeURIComponent(title)}&capacity=${capacity}`);
+            connectionDetails.mode = 'join';
             ws = socket;
             pendingPingAt = 0;
             connectTimeout = setTimeout(() => {
@@ -311,9 +701,11 @@
                 clearInterval(heartbeatTimer);
                 setConnectionStatus('连接已中断，正在自动重连…');
                 if (event.code === 4001) {
-                    shouldReconnect = false;
-                    setConnectionStatus('已在其他页面连接，请重新进入房间。');
-                    document.getElementById('login-screen').classList.remove('hidden');
+                    returnToLobby('已在其他页面连接，请重新进入房间。');
+                    return;
+                }
+                if (event.code === 4000 || event.code === 1008) {
+                    returnToLobby('无法进入这个房间，请检查房间信息后重试。');
                     return;
                 }
                 if (shouldReconnect) {
@@ -330,9 +722,7 @@
                 if (data.type === 'PONG') return;
                 
                 if (data.type === 'ERROR') {
-                    shouldReconnect = false;
-                    alert(data.message);
-                    location.reload();
+                    returnToLobby(data.message);
                     return;
                 }
 
@@ -346,19 +736,22 @@
                         document.getElementById('guess-input').value = '';
                     }
                     currentState = data;
+                    setEntryPending(false);
+                    closeEntryDialogs();
                     const question = data.current_question;
                     countdownDeadline = data.started && question?.stage === 'guessing'
                         ? performance.now() + (question.guess_deadline - data.server_time) * 1000 : null;
                     document.getElementById('login-screen').classList.add('hidden');
                     document.getElementById('game-screen').classList.remove('hidden');
-                    document.getElementById('room-title').innerText = `房间号: ${room}`;
+                    document.getElementById('room-title').innerText = data.room_name || `房间 ${room}`;
+                    document.getElementById('room-phase').textContent = `${data.started ? '游戏进行中' : '等待开始'} · 房间号 ${room}`;
                     
                     // 显示当前房间绑定的角色库
                     if(data.library_name) {
                         document.getElementById('room-lib-badge').innerText = `角色库: ${data.library_name}`;
                     }
                     
-                    document.getElementById('player-count').innerText = `在线: ${data.players.filter(p => p.connected).length}人`;
+                    document.getElementById('player-count').innerText = `${data.players.filter(p => p.connected).length} / ${data.max_players || 8} 人在线`;
                     
                     const myId = data.players.find(x => x.isMe)?.id;
 
@@ -380,10 +773,10 @@
                         return `
                             <div class="bg-white p-2.5 rounded-lg border shadow-xs flex flex-col justify-between">
                                 <div class="flex justify-between items-center">
-                                    <span class="font-semibold text-gray-800 truncate">${p.name} ${p.isMe ? '<span class="text-xs text-blue-500 font-normal">(我)</span>' : ''}</span>
+                                    <span class="font-semibold text-gray-800 truncate">${escapeHtml(p.name)} ${p.id === data.host_id ? '<span class="text-xs text-amber-600 font-normal">房主</span>' : ''} ${p.isMe ? '<span class="text-xs text-blue-500 font-normal">(我)</span>' : ''}</span>
                                     ${statusBadge}
                                 </div>
-                                ${data.started ? `<span class="text-xs text-indigo-600 font-bold mt-1">🏷️ ${p.targetPerson}</span>` : ''}
+                                ${data.started ? `<span class="text-xs text-indigo-600 font-bold mt-1">🏷️ ${escapeHtml(p.targetPerson)}</span>` : ''}
                             </div>
                         `;
                     }).join('');
@@ -392,11 +785,12 @@
                     if (me) {
                         isReady = me.ready;
                         const readyBtn = document.getElementById('ready-btn');
+                        readyBtn.setAttribute('aria-pressed', String(isReady));
                         if (isReady) {
-                            readyBtn.innerText = "取消准备 ⚪";
+                            readyBtn.innerText = "取消准备";
                             readyBtn.className = "w-full bg-gray-400 hover:bg-gray-500 text-white p-3 rounded-xl font-bold text-base transition shadow-md";
                         } else {
-                            readyBtn.innerText = "点击准备 🟢";
+                            readyBtn.innerText = "我准备好了";
                             readyBtn.className = "w-full bg-yellow-500 hover:bg-yellow-600 text-white p-3 rounded-xl font-bold text-base transition shadow-md";
                         }
                     }
@@ -425,12 +819,12 @@
                                     const pObj = data.players.find(x => x.id === pid);
                                     const pName = pObj ? pObj.name : '某玩家';
                                     const answerColor = ans === '是' ? 'text-emerald-600' : ans === '否' ? 'text-rose-600' : 'text-amber-600';
-                                    return `<span class="bg-white px-2 py-0.5 rounded border border-purple-200 text-gray-700">${pName}: <b class="${answerColor}">${ans}</b></span>`;
+                                    return `<span class="bg-white px-2 py-0.5 rounded border border-purple-200 text-gray-700">${escapeHtml(pName)}: <b class="${answerColor}">${escapeHtml(ans)}</b></span>`;
                                 }).join(' ');
 
                                 return `
                                     <div class="bg-white p-2.5 rounded-lg border border-purple-200 space-y-1 shadow-xs">
-                                        <div class="font-bold text-purple-900">问: ${q.text}</div>
+                                        <div class="font-bold text-purple-900">问: ${escapeHtml(q.text)}</div>
                                         <div class="flex flex-wrap gap-1.5 pt-1">${answersHtml || '<span class="text-gray-400">无回答</span>'}</div>
                                     </div>
                                 `;
@@ -466,7 +860,7 @@
                                     .map(p => {
                                         const ans = q.answers[p.id];
                                         return `<div class="bg-white p-1.5 rounded border flex justify-between items-center">
-                                            <span class="text-gray-700">${p.name}${p.finished ? ' (已通关)' : ''}</span>
+                                            <span class="text-gray-700">${escapeHtml(p.name)}${p.finished ? ' (已通关)' : ''}</span>
                                             <span class="font-bold ${ans === '是' ? 'text-emerald-600' : ans === '否' ? 'text-rose-600' : ans ? 'text-amber-600' : 'text-gray-400'}">${ans ? '已回答: ' + ans : p.reconnecting ? '等待重连' : p.connected ? '未回答' : '离线，已略过'}</span>
                                         </div>`;
                                     }).join('');
@@ -491,7 +885,7 @@
                                     .map(p => {
                                         const ans = q.answers[p.id] || '无';
                                         return `<div class="bg-white p-1.5 rounded border flex justify-between items-center">
-                                            <span class="text-gray-700">${p.name}</span>
+                                            <span class="text-gray-700">${escapeHtml(p.name)}</span>
                                             <span class="font-bold ${ans === '是' ? 'text-emerald-600' : ans === '否' ? 'text-rose-600' : ans === '是也不是' ? 'text-amber-600' : 'text-gray-400'}">${ans}</span>
                                         </div>`;
                                     }).join('');
@@ -544,6 +938,13 @@
                         targetCard.classList.add('hidden');
 
                         const allReady = canStartGame();
+                        const isHost = me?.id === data.host_id;
+                        startBtn.classList.toggle('hidden', !isHost);
+                        const readyCount = data.players.filter(p => p.ready && p.connected).length;
+                        document.getElementById('waiting-room-tip').textContent = data.players.length < 2
+                            ? '还差一位朋友！把上方房间号分享出去，至少 2 人即可开始。'
+                            : isHost ? `已准备 ${readyCount}/${data.players.length} 人，全员准备后即可开始。`
+                            : `已准备 ${readyCount}/${data.players.length} 人，准备好后等待房主开始。`;
                         if (allReady) {
                             startBtn.classList.remove('opacity-50', 'cursor-not-allowed');
                             startBtn.removeAttribute('disabled');
@@ -555,7 +956,7 @@
 
                     const eventsDiv = document.getElementById('events');
                     eventsDiv.innerHTML = data.events.map(ev => 
-                        `<div class="py-0.5 border-b border-gray-100 text-gray-700">${ev.content}</div>`).join('');
+                        `<div class="py-0.5 border-b border-gray-100 text-gray-700">${escapeHtml(ev.content)}</div>`).join('');
                     eventsDiv.scrollTop = eventsDiv.scrollHeight;
 
                     const chatMessagesDiv = document.getElementById('chat-messages');
@@ -601,9 +1002,13 @@
             }
         }
 
-        document.addEventListener('visibilitychange', checkConnection);
-        window.addEventListener('online', checkConnection);
-        window.addEventListener('pageshow', checkConnection);
+        function resumePage() {
+            if (shouldReconnect) checkConnection();
+            else if (document.visibilityState !== 'hidden') refreshRooms();
+        }
+        document.addEventListener('visibilitychange', resumePage);
+        window.addEventListener('online', resumePage);
+        window.addEventListener('pageshow', resumePage);
 
         function sendAction(action) {
             if (!connectionReady || !ws || ws.readyState !== WebSocket.OPEN) {
